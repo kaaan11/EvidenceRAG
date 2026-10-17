@@ -1,0 +1,99 @@
+{
+  "schema_version": 2,
+  "execution_kind": "synthetic_contract_fixture",
+  "identity": {
+    "fixture": "T08 latency denominator contract",
+    "version": 2,
+    "real_model": false
+  },
+  "fingerprint": "67f4c5d3816c56528304ff009979d3c4b56609d6d0420bb1764265e07e161d2a",
+  "questions": [
+    {
+      "id": "answer",
+      "category": "answerable",
+      "rank": null,
+      "diagnostics": {
+        "reason": "answered",
+        "generation_invoked": true,
+        "timings_ms": {
+          "generation": 1000
+        }
+      }
+    },
+    {
+      "id": "refusal",
+      "category": "answerable",
+      "rank": null,
+      "diagnostics": {
+        "reason": "model_no_evidence",
+        "generation_invoked": true,
+        "timings_ms": {
+          "generation": 99000
+        }
+      }
+    },
+    {
+      "id": "retrieval",
+      "category": "answerable",
+      "rank": null,
+      "diagnostics": {
+        "reason": "retrieval_no_evidence",
+        "generation_invoked": false,
+        "timings_ms": {
+          "generation": null
+        }
+      }
+    }
+  ],
+  "answers": {
+    "answerable": {
+      "count": 3,
+      "lexical_match_rate": null,
+      "end_to_end_lexical_with_coverage_rate": null,
+      "refusals": 0,
+      "errors": 0,
+      "semantic_rubric_rated": 0
+    },
+    "answerable_english": {
+      "count": 0,
+      "lexical_match_rate": null,
+      "end_to_end_lexical_with_coverage_rate": null,
+      "refusals": 0,
+      "errors": 0,
+      "semantic_rubric_rated": 0
+    },
+    "unanswerable_related": {
+      "count": 0,
+      "lexical_match_rate": null,
+      "end_to_end_lexical_with_coverage_rate": null,
+      "refusals": 0,
+      "errors": 0,
+      "semantic_rubric_rated": 0
+    },
+    "unanswerable_offtopic": {
+      "count": 0,
+      "lexical_match_rate": null,
+      "end_to_end_lexical_with_coverage_rate": null,
+      "refusals": 0,
+      "errors": 0,
+      "semantic_rubric_rated": 0
+    },
+    "uncategorized": {
+      "count": 0,
+      "lexical_match_rate": null,
+      "end_to_end_lexical_with_coverage_rate": null,
+      "refusals": 0,
+      "errors": 0,
+      "semantic_rubric_rated": 0
+    },
+    "generation_invocations": {
+      "count": 2,
+      "timed_count": 2,
+      "median_seconds": 50.0,
+      "errors": 0,
+      "model_refusals": 1
+    }
+  },
+  "quality_promotion_gate": "not_evaluated",
+  "model_resistance": "unmeasured"
+}
