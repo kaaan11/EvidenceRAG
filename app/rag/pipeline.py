@@ -66,6 +66,8 @@ class RAGPipeline:
             chunk_size=self.settings.chunk_size,
             chunk_overlap=self.settings.chunk_overlap,
             max_chunks=self.settings.max_document_chunks,
+            strategy=self.settings.chunker_strategy,
+            ingestion_version=self.settings.ingestion_version,
         )
         self.vector_store.check_capacity(
             chunks, max_chunks=self.settings.max_store_chunks,
@@ -172,6 +174,7 @@ def _sources_from(evidence, citations):
             "source": item.get("source"),
             "chunk_id": item.get("chunk_id"),
             "score": item.get("score"),
+            **({"provenance":{key:item.get(key) for key in ("char_start","char_end","source_sha256","source_representation","offset_unit","strategy","ingestion_version","normalization_version","heading_path","hard_split")}} if "char_start" in item else {}),
         }
         for index, item in enumerate(evidence, start=1)
     ]

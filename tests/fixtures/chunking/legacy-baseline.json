@@ -1,0 +1,43 @@
+{
+  "text": "# Belediye\n\n| Yıl | Tutar |\n| 2025 | 5.800 |\n\n- İlk işlem\n- İkinci işlem\n\n## İzin\n\nTürkçe açıklama bir paragraftır.\n",
+  "chunk_size": 40,
+  "chunk_overlap": 7,
+  "chunks": [
+    {
+      "text": "# Belediye | Yıl | Tutar | | 2025 |",
+      "metadata": {
+        "filename": "structure.md",
+        "document_id": "fixture",
+        "page": null,
+        "chunk_id": "fixture-0"
+      }
+    },
+    {
+      "text": "2025 | 5.800 | - İlk işlem - İkinci",
+      "metadata": {
+        "filename": "structure.md",
+        "document_id": "fixture",
+        "page": null,
+        "chunk_id": "fixture-1"
+      }
+    },
+    {
+      "text": "İkinci işlem ## İzin Türkçe açıklama",
+      "metadata": {
+        "filename": "structure.md",
+        "document_id": "fixture",
+        "page": null,
+        "chunk_id": "fixture-2"
+      }
+    },
+    {
+      "text": "çıklama bir paragraftır.",
+      "metadata": {
+        "filename": "structure.md",
+        "document_id": "fixture",
+        "page": null,
+        "chunk_id": "fixture-3"
+      }
+    }
+  ]
+}

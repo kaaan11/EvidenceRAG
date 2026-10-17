@@ -1,4 +1,19 @@
 import numpy as np
+
+
+def test_structured_strategy_index_identity_rejects_old_directory_without_rewriting(tmp_path):
+    from app.rag.config import Settings
+    from app.rag.vector_store import VectorStore,IncompatibleStoreError
+    import pytest
+    old=Settings();new=Settings(chunker_strategy='structured_v2',ingestion_version=2)
+    assert old.embedding_signature()['ingestion']!=new.embedding_signature()['ingestion']
+    assert old.embedding_signature()['embedding_model_revision']==new.embedding_signature()['embedding_model_revision']
+    path=tmp_path/'store.npz'
+    store=VectorStore(path,old.embedding_signature());store.add([{'text':'old evidence','metadata':{}}],np.ones((1,384),dtype='float32'))
+    before=path.read_bytes()
+    with pytest.raises(IncompatibleStoreError):VectorStore(path,new.embedding_signature())
+    assert path.read_bytes()==before
+    assert len(VectorStore(path,old.embedding_signature()).chunks)==1
 import pytest
 
 from app.rag.vector_store import DuplicateDocumentError, IncompatibleStoreError, VectorStore

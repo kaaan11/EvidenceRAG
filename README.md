@@ -239,6 +239,18 @@ Testler chunk metadata'sını, embedding/vector retrieval akışını, prompt k�
 
 ## Değerlendirme
 
+### Yapı koruyan chunker (opt-in)
+
+Varsayılan `CHUNKER_STRATEGY=legacy_character`, `INGESTION_VERSION=1` korunur; eski fixture çıktıları değişmez. Yeni kurulum/ayrı reindex için `CHUNKER_STRATEGY=structured_v2`, `INGESTION_VERSION=2` ve yeni bir `INDEX_DIR` birlikte seçilir. Strateji/version/size/overlap T06 index imzasına girer; eski dizini yeni stratejiyle açmak kontrollü uyumsuzluk hatası verir. Yedek + özgün belgelerden yeni dizine reindex + eski kod/ayar/dizine dönüş sözleşmesi geçerlidir; otomatik silme/rebuild yoktur.
+
+Yeni strateji ATX Markdown başlıkları, satır/paragraf, tablo ve liste ilişkilerini bütçe içinde korur. Metadata `heading_path`, `char_start`, `char_end`, `source_sha256`, `strategy`, `ingestion_version`, `normalization_version`, `offset_unit` ve `source_representation` içerir. Span `[start,end)` Unicode karakter aralığıdır: TXT/MD için UTF-8 metnin CRLF/CR → LF temsilinde; PDF için extractor'ın tek sayfa LF metninde. PDF byte offset veya görsel bbox değildir. Başlık yolu metadata'dır; gösterilen chunk kaynak span'ıdır, embedding girdisi aynı metin + mevcut passage prefix'idir. Yeni provenance alanları API kaynaklarında eklemeli bulunur; hash/adapter ayrıntıları UI akışına zorunlu eklenmez.
+
+Karakter bütçesi tokenizer bütçesi değildir; embedding adapter/modelinin kendi token tavanı uygulanabilir. Token sayısı ve truncation'ın kalite etkisi bu fixture koşusunda ölçülmedi. Kaynak span'ı, vektörün bütün karakterleri semantik olarak temsil ettiğini kanıtlamaz.
+
+Standart kelimelerde overlap başlangıcı kelime ortasına düşmez; overlap hedef miktardır ve yapı/kelime sınırında azalabilir. Chunk boyundan uzun boşluksuz öğeler ilerleme garantisi için hard-split edilir ve `hard_split=true` taşır. Whitespace-only parçalar gösterilmez; çok küçük bütçelerde kapsam kaybı ölçümde görünmelidir. Bu hafif ATX tarayıcı tam Markdown/HTML parser'ı veya PDF tablo çözücüsü değildir. Newline koruması semantik doğruluk kanıtı sayılmaz.
+
+`experiments/eval/chunking_ablation_manifest.json` tek değişkeni ve aynı context bütçesini tanımlar. T08 qrel/grup metriği kaynakta geçerli olup kaybolan kanıtı paydadan çıkarmaz. Bu teslimde yalnız fixture karşılaştırması yapılır; gerçek model kalite/token/RSS gate'i `not_evaluated` kalır ve yeni strateji varsayılan yapılmaz.
+
 `experiments/eval/` altında Türkçe bir değerlendirme seti bulunur: birbirine benzeyen iki belediye raporu ile bir izin yönergesi ve bunlar üzerine 41 soru. Sorular dört gruptadır: cevaplanabilir (Türkçe ve İngilizce), aynı konuda olup cevabı dokümanlarda bulunmayan "tuzak" sorular ve tamamen konu dışı sorular.
 
 ```bash
