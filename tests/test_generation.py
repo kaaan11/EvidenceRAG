@@ -100,3 +100,21 @@ def test_generation_mutex_remains_held_until_native_return(monkeypatch):
         finally: release.set()
         assert [f.result(5) for f in futures]==["Answer","Answer"]
     assert len(calls)==2 and runtime.snapshot()["active"]==0
+
+
+def test_generator_and_tokenizer_receive_same_observed_revision(monkeypatch):
+    import sys
+    import app.rag.generation as module
+    from app.rag.config import model_manifest
+    record=model_manifest()["llm"];calls=[];tokenizer=object()
+    class Tokenizer:
+        @staticmethod
+        def from_pretrained(name,**kwargs): calls.append(("tokenizer",name,kwargs));return tokenizer
+    generator=SimpleNamespace(model=SimpleNamespace(generation_config=SimpleNamespace()))
+    def pipeline(task,**kwargs):calls.append(("pipeline",task,kwargs));return generator
+    monkeypatch.setitem(sys.modules,"transformers",SimpleNamespace(AutoTokenizer=Tokenizer,pipeline=pipeline))
+    monkeypatch.setitem(sys.modules,"torch",SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:False),float32="float32"))
+    monkeypatch.setattr(module,"configure_torch_threads",lambda *args:None)
+    assert module._create_text_generator(record["repository"],record["revision"]) is generator
+    assert calls[0]==("tokenizer",record["repository"],{"revision":record["revision"]})
+    assert calls[1][2]["revision"]==record["revision"] and calls[1][2]["tokenizer"] is tokenizer

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "models": {
+    "embedding": {
+      "repository": "intfloat/multilingual-e5-small",
+      "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+      "tokenizer_repository": "intfloat/multilingual-e5-small",
+      "tokenizer_revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+      "observed_at_utc": "2026-10-17T22:11:26.160625+00:00",
+      "api_source": "https://huggingface.co/api/models/intfloat/multilingual-e5-small",
+      "artifact_sources": {
+        "config.json": "https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/config.json",
+        "tokenizer_config.json": "https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/tokenizer_config.json",
+        "sentence_bert_config.json": "https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/sentence_bert_config.json"
+      },
+      "config_sha256": "69137736cab8b8903a07fe8afaafdda25aac55415a12a55d1bffa9f581abf959",
+      "tokenizer_config_sha256": "a1d6bc8734a6f635dc158508bef000f8e2e5a759c7d92f984b2c86e5ff53425b",
+      "license": "mit",
+      "card_url": "https://huggingface.co/intfloat/multilingual-e5-small/blob/614241f622f53c4eeff9890bdc4f31cfecc418b3/README.md",
+      "context_window": 512,
+      "tokenizer_model_max_length": 512,
+      "embedding_dimension": 384,
+      "max_sequence_length": 512
+    },
+    "llm": {
+      "repository": "Qwen/Qwen2.5-1.5B-Instruct",
+      "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+      "tokenizer_repository": "Qwen/Qwen2.5-1.5B-Instruct",
+      "tokenizer_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+      "observed_at_utc": "2026-10-17T22:11:26.160625+00:00",
+      "api_source": "https://huggingface.co/api/models/Qwen/Qwen2.5-1.5B-Instruct",
+      "artifact_sources": {
+        "config.json": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/resolve/989aa7980e4cf806f80c7fef2b1adb7bc71aa306/config.json",
+        "tokenizer_config.json": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/resolve/989aa7980e4cf806f80c7fef2b1adb7bc71aa306/tokenizer_config.json"
+      },
+      "config_sha256": "98d2ff8cc47488d08a2b0b3acf4eb99ef210779b42bd48605f6b8e36acdbf670",
+      "tokenizer_config_sha256": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583",
+      "license": "apache-2.0",
+      "card_url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/blob/989aa7980e4cf806f80c7fef2b1adb7bc71aa306/README.md",
+      "context_window": 32768,
+      "tokenizer_model_max_length": 131072
+    }
+  },
+  "weights_downloaded": false,
+  "note": "Observed immutable artifact commits, not application Git revisions. Tokenizer is pinned to the same repository commit."
+}

@@ -13,7 +13,7 @@ import faiss
 from .config import InputLimitError
 
 
-STORE_FORMAT_VERSION = 1
+STORE_FORMAT_VERSION = 2
 
 
 class DuplicateDocumentError(Exception):
@@ -214,6 +214,11 @@ class VectorStore:
         return embeddings
 
     def _candidate_add(self, chunks, embeddings):
+        if embeddings is not None and embeddings.shape[1] <= 0:
+            raise ValueError("Embedding dimension must be positive")
+        declared_dimension = self.signature.get("embedding_dimension")
+        if embeddings is not None and declared_dimension is not None and embeddings.shape[1] != declared_dimension:
+            raise IncompatibleStoreError("Embedding output dimension does not match the pinned index identity")
         index = faiss.clone_index(self.index) if self.index is not None else None
         if embeddings is not None and index is None:
             index = faiss.IndexFlatIP(embeddings.shape[1])
@@ -249,7 +254,8 @@ class VectorStore:
         try:
             meta = {"version": STORE_FORMAT_VERSION, "signature": self.signature,
                     "documents": list(candidate.documents.values()), "chunks": candidate.chunks,
-                    "operation_id": candidate.operation_id}
+                    "operation_id": candidate.operation_id,
+                    "embedding_dimension": int(candidate.index.d) if candidate.index is not None else None}
             serialized = json.dumps(meta)
             self.persist_path.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(mode="wb", dir=self.persist_path.parent,
@@ -286,20 +292,29 @@ class VectorStore:
 
         if meta.get("version") != STORE_FORMAT_VERSION:
             raise IncompatibleStoreError(
-                f"Unsupported store format version {meta.get('version')} in {self.persist_path}"
+                "Legacy/unsupported index identity. Preserve and back up the old index; "
+                "use a new INDEX_DIR and explicitly reindex original documents. Do not relabel or delete the old file."
             )
         if self.signature and meta.get("signature") != self.signature:
             raise IncompatibleStoreError(
                 f"The saved index at {self.persist_path} was built with embedding settings "
                 f"{meta.get('signature')}, but the current settings are {self.signature}. "
-                "Restore the previous settings, or delete the index file to start over and "
-                "upload the documents again."
+                "Preserve/backup the old file, use a new INDEX_DIR and explicitly reindex original documents, or restore old code/settings."
             )
         if len(meta["chunks"]) != len(embeddings):
             raise IncompatibleStoreError(
                 f"The saved index at {self.persist_path} is inconsistent: "
                 f"{len(meta['chunks'])} chunks but {len(embeddings)} embeddings."
             )
+        if embeddings.ndim != 2:
+            raise IncompatibleStoreError("Stored embeddings must be a two-dimensional matrix")
+        if len(embeddings):
+            actual_dimension=embeddings.shape[1]
+            if type(meta.get("embedding_dimension")) is not int or meta["embedding_dimension"] <= 0 or meta["embedding_dimension"] != actual_dimension:
+                raise IncompatibleStoreError("Stored embedding dimension metadata does not match vectors")
+            declared=self.signature.get("embedding_dimension")
+            if declared is not None and declared != actual_dimension:
+                raise IncompatibleStoreError("Stored dimension does not match pinned model/index identity")
 
         index = None
         if len(embeddings):

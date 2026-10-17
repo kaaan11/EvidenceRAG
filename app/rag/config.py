@@ -1,9 +1,30 @@
 import os
+import json
+import re
+from functools import lru_cache
+from pathlib import Path
 from dataclasses import dataclass, field
 
 
 class InputLimitError(ValueError):
     """An explicit input or store budget was exceeded (not a server failure)."""
+
+
+@lru_cache(maxsize=1)
+def model_manifest():
+    return json.loads((Path(__file__).resolve().parents[2] / "models.lock.json").read_text(encoding="utf-8"))["models"]
+
+
+def effective_revision(kind, model_name, revision=None):
+    if revision is None:
+        settings = Settings()
+        expected_name = settings.embedding_model_name if kind == "embedding" else settings.llm_model_name
+        if model_name != expected_name:
+            raise ValueError("Explicit immutable revision required for a different model repository")
+        revision = settings.embedding_model_revision if kind == "embedding" else settings.llm_model_revision
+    if not isinstance(revision,str) or not re.fullmatch(r"[0-9a-f]{40}",revision):
+        raise ValueError("Model revision must be an immutable 40-character commit SHA")
+    return revision
 
 
 def _str_env(name, default):
@@ -55,6 +76,10 @@ class Settings:
         default_factory=_prefix_env("EMBEDDING_PASSAGE_PREFIX", "passage: ")
     )
     llm_model_name: str = field(default_factory=_str_env("LLM_MODEL_NAME", "Qwen/Qwen2.5-1.5B-Instruct"))
+    embedding_model_revision: str | None = field(default_factory=_str_env("EMBEDDING_MODEL_REVISION", None))
+    llm_model_revision: str | None = field(default_factory=_str_env("LLM_MODEL_REVISION", None))
+    ingestion_version: int = field(default_factory=_int_env("INGESTION_VERSION", 1))
+    chunker_strategy: str = field(default_factory=_str_env("CHUNKER_STRATEGY", "legacy_character"))
     chunk_size: int = field(default_factory=_int_env("CHUNK_SIZE", 800))
     chunk_overlap: int = field(default_factory=_int_env("CHUNK_OVERLAP", 100))
     top_k: int = field(default_factory=_int_env("TOP_K", 5))
@@ -89,6 +114,21 @@ class Settings:
     def __post_init__(self):
         if self.access_profile != "local":
             raise ValueError("ACCESS_PROFILE supports only 'local'; shared/public access is not supported")
+        for kind,name_field,revision_field in [
+            ("embedding","embedding_model_name","embedding_model_revision"),
+            ("llm","llm_model_name","llm_model_revision"),
+        ]:
+            revision=getattr(self,revision_field)
+            if revision is None:
+                recorded=model_manifest()[kind]
+                if getattr(self,name_field)!=recorded["repository"]:
+                    raise ValueError(f"{revision_field} is required for a custom model repository")
+                revision=recorded["revision"]
+                object.__setattr__(self,revision_field,revision)
+            if not re.fullmatch(r"[0-9a-f]{40}",revision):
+                raise ValueError(f"{revision_field} must be an immutable 40-character commit SHA")
+        if self.chunker_strategy != "legacy_character":
+            raise ValueError("Unsupported CHUNKER_STRATEGY")
         if isinstance(self.max_upload_mb, bool) or not isinstance(self.max_upload_mb, int) or self.max_upload_mb <= 0:
             raise ValueError("max_upload_mb must be a positive integer")
         if self.max_upload_bytes is None:
@@ -100,6 +140,7 @@ class Settings:
             "max_document_chunks", "max_store_chunks", "max_store_text_bytes",
             "max_active_heavy_jobs", "max_waiting_heavy_jobs", "ask_queue_capacity",
             "index_queue_capacity", "model_queue_capacity", "heavy_wait_seconds",
+            "ingestion_version",
         ):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
@@ -112,7 +153,28 @@ class Settings:
     def embedding_signature(self):
         """Settings that determine the stored vectors; changing any of them needs a re-index."""
         return {
+            "schema_version": 2,
             "embedding_model_name": self.embedding_model_name,
+            "embedding_model_revision": self.embedding_model_revision,
+            "tokenizer": {"repository":self.embedding_model_name,"revision":self.embedding_model_revision},
             "embedding_query_prefix": self.embedding_query_prefix,
             "embedding_passage_prefix": self.embedding_passage_prefix,
+            "normalization": "l2",
+            "embedding_dimension": self.embedding_metadata().get("embedding_dimension"),
+            "preprocessing_version": 1,
+            "ingestion": {"strategy":self.chunker_strategy,"version":self.ingestion_version,
+                          "chunk_size":self.chunk_size,"chunk_overlap":self.chunk_overlap},
         }
+
+    def embedding_metadata(self):
+        record=model_manifest()["embedding"]
+        if (self.embedding_model_name,self.embedding_model_revision)==(record["repository"],record["revision"]):
+            return {"embedding_dimension":record["embedding_dimension"],"max_sequence_length":record["max_sequence_length"]}
+        return {}  # Unknown until an explicitly pinned custom model is actually loaded.
+
+    def model_identity(self):
+        return {"embedding": {"repository":self.embedding_model_name,"revision":self.embedding_model_revision,
+                              "tokenizer_repository":self.embedding_model_name,"tokenizer_revision":self.embedding_model_revision},
+                "llm": {"repository":self.llm_model_name,"revision":self.llm_model_revision,
+                        "tokenizer_repository":self.llm_model_name,"tokenizer_revision":self.llm_model_revision},
+                "index_signature":self.embedding_signature()}
