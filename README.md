@@ -51,6 +51,33 @@ pip install -r requirements.txt
 | `MAX_UPLOAD_MB` | `20` | Yüklenebilecek en büyük doküman boyutu; aşan dosyalar `413` ile reddedilir |
 | `INDEX_DIR` | `data/index` | Kalıcı index'in tutulduğu klasör (göreli yollar proje köküne göre) |
 
+### Girdi ve store bütçeleri
+
+Bu sınırlar yerel, tek sahibi olan ve tek prosesli kullanım için değiştirilebilir başlangıç politikasıdır; ölçülmüş güvenli kapasite veya gecikme garantisi değildir. Pozitif tam sayı gerekir; chunk overlap değeri `0 <= CHUNK_OVERLAP < CHUNK_SIZE` olmalıdır. Geçersiz ayarlar başlangıçta hata verir.
+
+| Ayar | Varsayılan | Kapsam / birim |
+| --- | --- | --- |
+| `MAX_UPLOAD_MB` | `20` | Dosya içeriği, MiB (`1 MiB = 1.048.576 bayt`); eski ayar korunur |
+| `MAX_UPLOAD_BYTES` | `MAX_UPLOAD_MB * 1.048.576` | İsteğe bağlı kesin bayt sınırı; verilirse MiB ayarını geçersiz kılar |
+| `MAX_HTTP_BODY_BYTES` | `21037056` | POST `/documents` toplam gövdesi: 20 MiB + 64 KiB multipart framing/başlık payı |
+| `MAX_JSON_BODY_BYTES` | `32768` | POST `/ask` toplam JSON gövdesi, bayt |
+| `MAX_MULTIPART_HEADER_BYTES` | `8192` | Parça başına başlık adları/değerleri ve normalize `: ` / CRLF ayraçları için bayt bütçesi |
+| `MAX_FILENAME_BYTES` | `512` | Dosya adının UTF-8 bayt uzunluğu |
+| `MAX_QUESTION_CHARS` | `4000` | Soru karakterleri, çevre boşlukları dahil; token sınırı değildir |
+| `MAX_PDF_PAGES` | `500` | PDF başına sayfa |
+| `MAX_TEXT_CHARS` | `2000000` | Belgedeki bütün sayfalardan çıkarılan toplam metin karakteri |
+| `MAX_DOCUMENT_CHUNKS` | `2000` | Belge başına üretilen chunk |
+| `MAX_STORE_CHUNKS` | `20000` | Store toplam chunk sayısı |
+| `MAX_STORE_TEXT_BYTES` | `67108864` | Store'daki chunk metinlerinin toplam UTF-8 baytı (64 MiB); overlap tekrarları da sayılır |
+
+Upload yalnız `file` adlı tek dosya parçası kabul eder; ek dosya veya form alanı reddedilir. Dosya baytlarıyla toplam HTTP gövdesi ayrı sınırlardır. Bilinen aşırı `Content-Length` parser başlamadan reddedilir. Başlık yoksa veya gerçeği yansıtmıyorsa ASGI `receive` üzerinden sayılan toplam kullanılır; bütçeyi aşan chunk parser'a verilmez ve başka body chunk'ı istenmez. Limit içinde alınan önceki parçalar parse edilmiş veya diske spool edilmiş olabilir. Kısmi, tamamlanmamış ve başarısız upload kaynakları kapatılır. Bu sayaç sunucunun önceden belleğe aldığı tek ASGI chunk'ının boyutunu sınırlamaz; genel HTTP sunucu/header veya proxy sınırlarının yerine geçmez.
+
+TXT/MD en çok metin limiti + 1 karakter okunarak kontrol edilir. PDF sayfa sayısı çıkarımdan önce, toplam metin ise her sayfa çıkarımından sonra kontrol edilir. Pypdf decoder korumaları değiştirilmez. `extract_text()` içindeki tepe CPU/RAM, page-tree dolaşımı ve dosya açma maliyeti için sert sınır sağlanmaz; thread timeout'u veya ayrı extraction prosesi eklenmemiştir. Chunk üretimi limitte durur; tüm sınırsız chunk listesi önce üretilmez. Erken dosya/metin/sayfa/chunk reddi embedding veya store mutasyonu başlatmaz.
+
+Store kotası embedding öncesi kontrol edilir, ardından mutasyon kilidi altında yeniden denetlenir; yarış nedeniyle son kontrolde ret olursa embedding zaten yapılmış olabilir, ancak reddedilen belge RAM/disk durumuna eklenmez. 64 MiB yeni toplam metin başlangıç bütçesidir; vektörler, metadata, NPZ veya proses RSS boyutunu ölçmez. Mevcut bir index yeni kotanın üstündeyse sessizce silinmez/rebuild edilmez; okuma/silme kullanılabilir, kota içi duruma dönene kadar yeni ekleme reddedilir. Kayıt hatalarında transaction/rollback garantisi bu limit kontrolünden ayrı bir konudur.
+
+HTTP hata biçimi `detail` alanını korur: gövde/dosya/metin/sayfa/chunk/store ve başlık/filename aşımı `413`; soru karakter sınırı API modelinde `422`; boş/geçersiz belge veya fazladan multipart parça `400`; duplicate içerik `409`. Doğrudan `pipeline.ask/index_file` çağrısı limit aşımında `InputLimitError` yükseltir. Hiçbir limit sessiz kırpma yapmaz. Upload MiB veya bayt ayarını artırırken ayrı HTTP gövde bütçesi de bilinçli seçilmelidir. Prompt token bütçesi ve aktif/bekleyen model işlerinin sınırları bu görevin kapsamında değildir.
+
 `RELEVANCE_THRESHOLD`, normalize edilmiş FAISS inner product değeridir; bu nedenle cosine similarity olarak yorumlanır. Eşik embedding modeline özgüdür: E5 modelleri skorları dar bir aralıkta (yaklaşık 0.75–0.90) üretir. 0.80 değeri `data/raw/ornek_rapor.md` üzerindeki küçük bir Türkçe soru setiyle seçildi (ilgili sorular ≥ 0.80, konu dışı sorular ≤ 0.79). Embedding modelini değiştirirseniz eşiği de yeniden ayarlayın.
 
 ## Çalıştırma

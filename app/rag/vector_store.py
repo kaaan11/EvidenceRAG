@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import faiss
 
+from .config import InputLimitError
+
 
 STORE_FORMAT_VERSION = 1
 
@@ -25,10 +27,12 @@ class IncompatibleStoreError(RuntimeError):
 
 
 class VectorStore:
-    def __init__(self, persist_path=None, signature=None):
+    def __init__(self, persist_path=None, signature=None, *, max_chunks=20000, max_text_bytes=64 * 1024 * 1024):
         self.index = None
         self.chunks = []
         self.documents = {}
+        self.max_chunks = max_chunks
+        self.max_text_bytes = max_text_bytes
         # Identifies how the stored embeddings were produced, so a saved store isn't
         # silently searched with vectors from a different embedding model.
         self.signature = signature or {}
@@ -50,19 +54,38 @@ class VectorStore:
         if embeddings is None:
             return
         with self._lock:
+            self._check_capacity(chunks)
             self._append(chunks, embeddings)
             self._save()
 
-    def add_document(self, document, chunks, embeddings):
+    def add_document(self, document, chunks, embeddings, *, max_chunks=None, max_text_bytes=None):
         embeddings = self._prepare_embeddings(chunks, embeddings)
         with self._lock:
             existing = self._find_by_hash(document.get("sha256"))
             if existing:
                 raise DuplicateDocumentError(existing)
+            self._check_capacity(chunks, max_chunks=max_chunks, max_text_bytes=max_text_bytes)
             if embeddings is not None:
                 self._append(chunks, embeddings)
             self.documents[document["document_id"]] = dict(document)
             self._save()
+
+    def check_capacity(self, chunks, *, max_chunks=None, max_text_bytes=None):
+        """Early advisory check; add_document rechecks under the mutation lock."""
+        with self._lock:
+            self._check_capacity(chunks, max_chunks=max_chunks, max_text_bytes=max_text_bytes)
+
+    def _check_capacity(self, chunks, *, max_chunks=None, max_text_bytes=None):
+        # Called under _lock before live state or disk is changed. T05 can retain
+        # this check when introducing candidate-state persistence.
+        chunk_limit = min(self.max_chunks, max_chunks) if max_chunks is not None else self.max_chunks
+        text_limit = min(self.max_text_bytes, max_text_bytes) if max_text_bytes is not None else self.max_text_bytes
+        if len(self.chunks) + len(chunks) > chunk_limit:
+            raise InputLimitError(f"Store exceeds {chunk_limit} chunks")
+        text_bytes = sum(len(chunk["text"].encode("utf-8")) for chunk in self.chunks)
+        incoming_bytes = sum(len(chunk["text"].encode("utf-8")) for chunk in chunks)
+        if text_bytes + incoming_bytes > text_limit:
+            raise InputLimitError(f"Store text exceeds {text_limit} UTF-8 bytes")
 
     def find_document_by_hash(self, sha256):
         with self._lock:
