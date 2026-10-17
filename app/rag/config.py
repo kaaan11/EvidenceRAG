@@ -38,6 +38,7 @@ def _float_env(name, default):
 # imported, so values loaded from a .env file at startup are picked up.
 @dataclass(frozen=True)
 class Settings:
+    access_profile: str = field(default_factory=_str_env("ACCESS_PROFILE", "local"))
     embedding_model_name: str = field(
         default_factory=_str_env("EMBEDDING_MODEL_NAME", "intfloat/multilingual-e5-small")
     )
@@ -71,6 +72,8 @@ class Settings:
     index_dir: str = field(default_factory=_str_env("INDEX_DIR", "data/index"))
 
     def __post_init__(self):
+        if self.access_profile != "local":
+            raise ValueError("ACCESS_PROFILE supports only 'local'; shared/public access is not supported")
         if isinstance(self.max_upload_mb, bool) or not isinstance(self.max_upload_mb, int) or self.max_upload_mb <= 0:
             raise ValueError("max_upload_mb must be a positive integer")
         if self.max_upload_bytes is None:

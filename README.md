@@ -83,10 +83,24 @@ HTTP hata biçimi `detail` alanını korur: gövde/dosya/metin/sayfa/chunk/store
 ## Çalıştırma
 
 ```bash
-uvicorn main:app --reload
+uvicorn main:app --host 127.0.0.1 --no-proxy-headers --reload
 ```
 
 Sunucu başladıktan sonra web arayüzünü `http://127.0.0.1:8000/` adresinden, Swagger API ekranını ise `http://127.0.0.1:8000/docs` adresinden açabilirsiniz. Web arayüzü doküman yükleme, soru sorma, cevap gösterme ve kaynakları okunabilir kartlar halinde listeleme işlemlerini içerir.
+
+### Yerel erişim sınırı
+
+`ACCESS_PROFILE=local` varsayılan ve desteklenen tek profildir. `shared`, `public` veya başka bir değer başlangıçta hata verir; bir API key eklemek bunları etkinleştirmez. Public/LAN yayın, reverse proxy ve çok kullanıcı/tenant izolasyonu bu sürümde desteklenmez. Aynı makinedeki diğer proseslere karşı kullanıcı kimlik doğrulaması sağlanmaz; bütün yerel istemciler aynı store'u kullanır.
+
+Launcher loopback'e bağlanır ve proxy başlıklarından peer türetmez. Uygulama ayrıca her HTTP isteğinde gerçek ASGI peer'inin loopback IP olmasını ve tek bir geçerli Host başlığını ister. Host allowlist `localhost`, `127.0.0.1`, köşeli parantezli `[::1]` ve bunların 1–65535 port varyantlarıdır. IPv6 kullanacaksanız aynı launcher'da `--host ::1` seçip `http://[::1]:8000/` açabilirsiniz. `localhost.evil.example`, userinfo, eksik/çoklu Host veya bozuk port kabul edilmez. Host kontrolü socket binding veya auth yerine geçmez.
+
+POST/DELETE gibi mutasyonlarda Origin varsa scheme/host/etkin port olarak isteğin origin'i ile tam eşleşmelidir. `null`, başka port/host, birden fazla Origin veya URL path'i içeren Origin reddedilir. `localhost` ile `127.0.0.1` aynı origin sayılmaz. Origin göndermeyen doğrudan yerel CLI istemcisi kabul edilir; örneğin `curl http://127.0.0.1:8000/health` ve yukarıdaki JSON/multipart örnekleri çalışır. Origin taklit edilebilir; bu kontrol auth değildir. CORS wildcard eklenmez.
+
+`Forwarded`, `X-Forwarded-For/Host/Proto/Port` ve `X-Real-IP` başlıkları değerlerine güvenilmeden reddedilir. Uzak peer, sahte localhost Host/Origin ile yerel kabul edilmez. Başlıkları kaldıran yerel bir reverse proxy'nin arkasındaki gerçek istemciyi uygulama ayırt edemez; bu nedenle proxy arkasında yerel erişim garantisi verilmez ve o dağıtım desteklenmez.
+
+Host/proxy hataları `400`, uzak peer veya uygun olmayan mutasyon Origin'i `403` ve mevcut `detail` biçimiyle döner; kontrol body parser, spool ve model/store işinden önce çalışır. `/`, `/static`, `/docs`, `/openapi.json`, `/health` ve belge/soru uçları aynı peer/Host sınırına tabidir. GET/HEAD/OPTIONS için Origin şartı yoktur. `/docs` yerelde açıktır; onu kapatmak erişim korumasının yerine geçmez. UI doğrulama hatalarını metin olarak gösterir; anahtar akışı veya browser storage eklenmemiştir.
+
+Belge metni ve dosya adı prompt'ta JSON verisi olarak serileştirilir; yeni satır, alıntı, kontrol ve `<...>` rol/delimiter işaretleri escape edilir. Soru aynı user rolünde ayrı serileştirilir; system rolü yalnız uygulama protokolünü taşır. Kaynak komutları atıf/ret protokolünü değiştiremez şeklinde açık sistem talimatı vardır. Bu, gerçek modelin kötü niyetli talimata uymayacağını kanıtlamaz; NO_EVIDENCE tam yanıt sözleşmesi ve semantik doğrulama sınırlamaları korunur. Dar serializer/DOM-stub testleri genel prompt-injection veya XSS denetimi değildir.
 
 ### Sağlık kontrolü
 

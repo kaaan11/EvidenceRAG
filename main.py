@@ -14,6 +14,7 @@ from pydantic import BaseModel, field_validator
 load_dotenv()
 
 from app.rag.config import InputLimitError, Settings
+from app.access import LocalAccessMiddleware
 from app.request_limits import BodyLimitMiddleware, bounded_upload
 from app.rag.document_loader import DocumentError
 from app.rag.generation import LLMGenerationError
@@ -38,6 +39,7 @@ rag_pipeline = RAGPipeline(
 
 app = FastAPI(title="EvidenceRAG")
 app.add_middleware(BodyLimitMiddleware, settings=lambda: rag_pipeline.settings)
+app.add_middleware(LocalAccessMiddleware)  # Outermost: reject before body parsing/spooling.
 static_directory = project_directory / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 

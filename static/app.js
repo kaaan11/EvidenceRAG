@@ -209,6 +209,11 @@ async function refreshHealth() {
 
 async function parseResponse(response) {
     const data = await response.json().catch(() => ({}));
+    if (Array.isArray(data.detail)) {
+        data.detail = data.detail.map((item) => item.msg || "Geçersiz istek").join("; ");
+    } else if (data.detail != null && typeof data.detail !== "string") {
+        data.detail = "İstek işlenemedi.";
+    }
     return data;
 }
 
