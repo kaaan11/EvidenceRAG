@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from app.rag.config import Settings
+from app.rag.config import InputLimitError
 from app.rag.pipeline import INSUFFICIENT_EVIDENCE, RAGPipeline
 from app.rag.vector_store import DuplicateDocumentError
 
@@ -150,3 +151,62 @@ def test_pipeline_registers_documents_and_skips_duplicate_uploads(tmp_path: Path
     assert registered["pages"] is None
     assert len(registered["sha256"]) == 64
     assert len(embedded) == 1
+
+
+@pytest.mark.parametrize("kind", ["file", "txt_text", "md_text", "pdf_pages", "chunks", "store_chunks", "store_text"])
+def test_early_budget_rejection_never_embeds_or_mutates(tmp_path, kind):
+    from app.rag.vector_store import VectorStore
+    from pypdf import PdfWriter
+    path = tmp_path / "store.npz"
+    store = VectorStore(persist_path=path)
+    store.add_document({"document_id": "kept", "filename": "kept.txt", "sha256": "kept"},
+                       [{"text": "kept", "metadata": {"document_id": "kept", "chunk_id": "kept-0"}}],
+                       [[1.0, 0.0]])
+    before = path.read_bytes()
+    settings = {"chunk_size": 5, "chunk_overlap": 0}
+    settings.update({
+        "file": {"max_upload_bytes": 3}, "txt_text": {"max_text_chars": 3},
+        "md_text": {"max_text_chars": 3}, "pdf_pages": {"max_pdf_pages": 1},
+        "chunks": {"max_document_chunks": 1}, "store_chunks": {"max_store_chunks": 1},
+        "store_text": {"max_store_text_bytes": 4},
+    }[kind])
+    calls = []
+    rag = RAGPipeline(settings=Settings(**settings), vector_store=store,
+                      embedding_function=lambda *args: calls.append(args))
+    document = tmp_path / ("document.md" if kind == "md_text" else "document.txt")
+    if kind == "pdf_pages":
+        document = tmp_path / "document.pdf"
+        writer = PdfWriter()
+        for _ in range(2):
+            writer.add_blank_page(width=10, height=10)
+        writer.write(document)
+    else:
+        document.write_text("abcdefghij", encoding="utf-8")
+    with pytest.raises(InputLimitError):
+        rag.index_file(document)
+    assert calls == []
+    assert path.read_bytes() == before
+    assert [d["document_id"] for d in store.list_documents()] == ["kept"]
+    assert [c["text"] for c in store.chunks] == ["kept"]
+    assert store.index.ntotal == 1
+
+
+@pytest.mark.parametrize("length", [4, 5, 6])
+def test_direct_question_boundary_precedes_model_calls(tmp_path, length):
+    document = tmp_path / "document.txt"
+    document.write_text("An event happened.", encoding="utf-8")
+    calls = []
+    def embed(texts, model_name):
+        calls.append(texts)
+        return fake_embed(texts, model_name)
+    rag = RAGPipeline(settings=Settings(max_question_chars=5, relevance_threshold=0.3),
+                      embedding_function=embed, generation_function=lambda *args, **kwargs: "Answer")
+    rag.index_file(document)
+    calls.clear()
+    if length > 5:
+        with pytest.raises(InputLimitError, match="Question"):
+            rag.ask("ş" * length)
+        assert calls == []
+    else:
+        assert rag.ask("ş" * length)["answer"] == "Answer"
+        assert len(calls) == 1

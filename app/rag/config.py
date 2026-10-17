@@ -2,6 +2,10 @@ import os
 from dataclasses import dataclass, field
 
 
+class InputLimitError(ValueError):
+    """An explicit input or store budget was exceeded (not a server failure)."""
+
+
 def _str_env(name, default):
     return lambda: os.getenv(name) or default
 
@@ -14,7 +18,10 @@ def _prefix_env(name, default):
 def _int_env(name, default):
     def read():
         value = os.getenv(name)
-        return int(value) if value else default
+        try:
+            return int(value) if value else default
+        except ValueError as exc:
+            raise ValueError(f"{name} must be an integer") from exc
 
     return read
 
@@ -46,8 +53,39 @@ class Settings:
     relevance_threshold: float = field(default_factory=_float_env("RELEVANCE_THRESHOLD", 0.80))
     max_new_tokens: int = field(default_factory=_int_env("MAX_NEW_TOKENS", 256))
     max_upload_mb: int = field(default_factory=_int_env("MAX_UPLOAD_MB", 20))
+    # Bytes override the legacy MiB setting when explicitly supplied.
+    max_upload_bytes: int | None = field(
+        default_factory=_int_env("MAX_UPLOAD_BYTES", None)
+    )
+    max_http_body_bytes: int = field(default_factory=_int_env("MAX_HTTP_BODY_BYTES", 20 * 1024 * 1024 + 65536))
+    max_json_body_bytes: int = field(default_factory=_int_env("MAX_JSON_BODY_BYTES", 32768))
+    max_multipart_header_bytes: int = field(default_factory=_int_env("MAX_MULTIPART_HEADER_BYTES", 8192))
+    max_filename_bytes: int = field(default_factory=_int_env("MAX_FILENAME_BYTES", 512))
+    max_question_chars: int = field(default_factory=_int_env("MAX_QUESTION_CHARS", 4000))
+    max_pdf_pages: int = field(default_factory=_int_env("MAX_PDF_PAGES", 500))
+    max_text_chars: int = field(default_factory=_int_env("MAX_TEXT_CHARS", 2000000))
+    max_document_chunks: int = field(default_factory=_int_env("MAX_DOCUMENT_CHUNKS", 2000))
+    max_store_chunks: int = field(default_factory=_int_env("MAX_STORE_CHUNKS", 20000))
+    max_store_text_bytes: int = field(default_factory=_int_env("MAX_STORE_TEXT_BYTES", 64 * 1024 * 1024))
     # Relative paths are resolved against the project root.
     index_dir: str = field(default_factory=_str_env("INDEX_DIR", "data/index"))
+
+    def __post_init__(self):
+        if isinstance(self.max_upload_mb, bool) or not isinstance(self.max_upload_mb, int) or self.max_upload_mb <= 0:
+            raise ValueError("max_upload_mb must be a positive integer")
+        if self.max_upload_bytes is None:
+            object.__setattr__(self, "max_upload_bytes", self.max_upload_mb * 1024 * 1024)
+        for name in (
+            "chunk_size", "top_k", "max_new_tokens", "max_upload_mb", "max_upload_bytes",
+            "max_http_body_bytes", "max_json_body_bytes", "max_multipart_header_bytes",
+            "max_filename_bytes", "max_question_chars", "max_pdf_pages", "max_text_chars",
+            "max_document_chunks", "max_store_chunks", "max_store_text_bytes",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if isinstance(self.chunk_overlap, bool) or not isinstance(self.chunk_overlap, int) or not 0 <= self.chunk_overlap < self.chunk_size:
+            raise ValueError("chunk_overlap must be >= 0 and less than chunk_size")
 
     def embedding_signature(self):
         """Settings that determine the stored vectors; changing any of them needs a re-index."""

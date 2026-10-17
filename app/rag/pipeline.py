@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .chunking import chunk_documents
-from .config import Settings
+from .config import InputLimitError, Settings
 from .document_loader import load_document
 from .embedding import embed_texts
 from .generation import generate_answer
@@ -29,9 +29,14 @@ class RAGPipeline:
         self.settings = settings or Settings()
         self.embedding_function = embedding_function
         self.generation_function = generation_function
-        self.vector_store = vector_store or VectorStore()
+        self.vector_store = vector_store or VectorStore(
+            max_chunks=self.settings.max_store_chunks,
+            max_text_bytes=self.settings.max_store_text_bytes,
+        )
 
     def index_file(self, path, filename=None, source=None):
+        if Path(path).stat().st_size > self.settings.max_upload_bytes:
+            raise InputLimitError(f"File exceeds {self.settings.max_upload_bytes} bytes")
         filename = filename or Path(path).name
         sha256 = _file_sha256(path)
         # Checked before embedding so re-uploads don't pay for it; the store checks
@@ -44,11 +49,18 @@ class RAGPipeline:
             path,
             filename=filename,
             source=source or filename,
+            max_text_chars=self.settings.max_text_chars,
+            max_pdf_pages=self.settings.max_pdf_pages,
         )
         chunks = chunk_documents(
             pages,
             chunk_size=self.settings.chunk_size,
             chunk_overlap=self.settings.chunk_overlap,
+            max_chunks=self.settings.max_document_chunks,
+        )
+        self.vector_store.check_capacity(
+            chunks, max_chunks=self.settings.max_store_chunks,
+            max_text_bytes=self.settings.max_store_text_bytes,
         )
         prefix = self.settings.embedding_passage_prefix
         embeddings = self.embedding_function(
@@ -63,7 +75,10 @@ class RAGPipeline:
             "chunks": len(chunks),
             "uploaded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
-        self.vector_store.add_document(document, chunks, embeddings)
+        self.vector_store.add_document(
+            document, chunks, embeddings, max_chunks=self.settings.max_store_chunks,
+            max_text_bytes=self.settings.max_store_text_bytes,
+        )
         return {
             "document_id": document["document_id"],
             "filename": filename,
@@ -77,6 +92,8 @@ class RAGPipeline:
         return self.vector_store.delete_document(document_id)
 
     def ask(self, question):
+        if len(question) > self.settings.max_question_chars:
+            raise InputLimitError(f"Question exceeds {self.settings.max_question_chars} characters")
         evidence = retrieve(
             question,
             self.vector_store,
