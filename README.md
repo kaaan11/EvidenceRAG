@@ -40,10 +40,12 @@ PDF sayfa numaraları; dosya adı, document id, source ve chunk id ile birlikte 
 python -m venv .venv
 # Windows PowerShell
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install --require-hashes --only-binary=:all: -r requirements.lock
 ```
 
-İlk embedding ve LLM kullanımı, ilgili Hugging Face modellerini indirir (embedding ~470 MB, LLM ~3 GB). Model GPU yoksa CPU'da float32 olarak çalışır; tipik bir dizüstü işlemcide bir cevap 10–30 saniye sürer, ilk soru model yüklemesi nedeniyle daha uzun sürer. Model adlarını veya RAG ayarlarını environment variable ile ya da proje kökündeki bir `.env` dosyasıyla değiştirebilirsiniz (`.env.example` dosyasını kopyalayıp düzenleyin; ortamda zaten tanımlı değişkenler `.env`'deki değerlerden önceliklidir):
+Lock hedefi Windows x64 / CPython 3.12'dir; temiz kurulum Windows 11/Python 3.12.10 üzerinde doğrulanır. Runtime lock 53, test lock 59 çözülmüş dağıtımın gerçek wheel SHA-256 değerlerini taşır. `requirements.txt` runtime doğrudan girdisi, `requirements-dev.txt` ona ek pytest/httpx2 test girdisidir; doğrudan sürümler korunur. Linux/macOS/ARM için bu tek-platform hash dosyaları doğrulanmış kurulum iddiası taşımaz. Kullanılan producer pip 25.0.1'dir; model ağırlıkları lock'a dahil değildir.
+
+İlk gerçek embedding/LLM kullanımı cache yoksa pinli Hugging Face artifact'ını indirebilir; test lane'leri offline'dır ve ağırlık indirmez. Model GPU yoksa CPU float32 kullanır; gerçek inference gecikmesi/kapasitesi bu teslimde ölçülmedi. Model adlarını veya RAG ayarlarını environment variable ile ya da proje kökündeki `.env` dosyasıyla değiştirebilirsiniz (`.env.example` dosyasını kopyalayıp düzenleyin; ortamda zaten tanımlı değerler önceliklidir):
 
 | Değişken | Varsayılan | Açıklama |
 | --- | --- | --- |
@@ -232,10 +234,19 @@ Bu uyarılar cevabı engellemez veya yeniden üretmez. `cited=true` yalnız o ka
 ## Testler
 
 ```bash
-pytest -q
+python -m pip install --require-hashes --only-binary=:all: -r requirements-dev.lock
+python -m pytest -q -p no:cacheprovider -m "model_free and not real_model"
+python -m pytest -q -p no:cacheprovider -m "native and not real_model"
+python experiments/evaluate.py --preflight-only --output eval-preflight.json
 ```
 
-Testler chunk metadata'sını, embedding/vector retrieval akışını, prompt kısıtlarını, kaynak dönüşünü, yetersiz kanıt davranışını, ayarların environment'tan okunmasını ve API endpoint'lerini (yükleme doğrulaması ve boyut sınırı dahil) kontrol eder. Gerçek embedding modeli veya LLM yüklenmez; bu fonksiyonlar testte sahte fonksiyonlarla değiştirilir, bu yüzden testler birkaç saniyede biter.
+Node 24 PATH üzerinde bulunmalıdır; UI testleri küçük DOM stub'ı çalıştırır, gerçek tarayıcı denetimi değildir. `EVIDENCERAG_NODE_BINARY` açık Node executable seçebilir. `tests/conftest.py` model hub erişimini offline tutar. Model-free lane algoritma/adapter kontrolleri, native lane gerçek FAISS/framework/dosya/proses kilidi ile fake model entegrasyonudur. Toplam kontrol için `python -m pytest -q -p no:cacheprovider -m "not real_model"` kullanılabilir. Gerçek modellerle cache-only lane ancak açık `EVIDENCERAG_REAL_MODEL_TESTS=1` seçimi ve hazır immutable cache ile çalıştırılır; ağırlık indirme ayrı bütçe kararıdır.
+
+Enjekte edilen `generate_answer(..., text_generator=callable)` test protokolü primitive `max_new_tokens`/`do_sample` argümanlarını kullanır ve Transformers/Torch gerektirmez. Üretim yolu gerçek `GenerationConfig`, revision, tokenizer bütçesi ve scheduling davranışını korur; eksik kütüphanede fake başarılı yanıt üretmez. Bu ayrım boş stdlib ortamında ayrıca doğrulanır.
+
+`.github/workflows/tests.yml` aynı kurulum/test/preflight komutlarını Windows/Python 3.12.10/Node 24.19.0 üzerinde çalıştırır; actions checkout/setup-python/setup-node resmi repo tag'lerinden gözlenen immutable SHA'lara bağlıdır. Doğrulanan checkout `core.autocrlf=true` kullanır: legacy manifest dataset'in gerçek dosya byte hash'ini taşır; CI ephemeral runner'ında aynı newline politikası checkout öncesi açık ayarlanır. Farklı byte/newline temsili farklı dataset kimliğidir ve eski manifest sessizce yeniden etiketlenmez. Workflow dosyasının eklenmesi uzak CI başarısı değildir; PR kontrolleri ayrıca doğrulanmalıdır. Lisans seçimi hak sahibini bekler; otomatik LICENSE eklenmez.
+
+Lock güncellemesi için desteklenen temiz Windows/Python ortamında `python -m pip install --dry-run --ignore-installed --only-binary=:all: -r requirements.txt --report runtime-resolver.json` ve dev girdisiyle aynı komut kullanılır. Her raporun `install` kayıtlarındaki gerçek `metadata.name==metadata.version` ve `download_info.archive_info.hashes.sha256` değerlerinden ilgili lock yeniden üretilir; ardından hash zorunlu temiz kurulum, iki test lane'i ve native import kontrolü tekrar yapılır. Resolver raporları ve üretici script bu görevin dış teslim paketinde kayıtlıdır. Sadece sürüm listesini değiştirmek doğrulama sayılmaz.
 
 ## Değerlendirme
 

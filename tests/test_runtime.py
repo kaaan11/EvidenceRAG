@@ -5,6 +5,19 @@ import time
 from dataclasses import replace
 
 import pytest
+
+
+def test_ci_workflow_yaml_valid_and_commands_match_readme():
+    from pathlib import Path
+    import re
+    import yaml
+    root=Path(__file__).resolve().parents[1]
+    workflow=yaml.safe_load((root/'.github/workflows/tests.yml').read_text(encoding='utf-8'))
+    assert 'pull_request' in workflow['on'] and 'workflow_dispatch' in workflow['on']
+    steps=workflow['jobs']['offline-tests']['steps'];readme=(root/'README.md').read_text(encoding='utf-8')
+    for step in steps:
+        if 'uses' in step:assert re.fullmatch(r'actions/[a-z-]+@[0-9a-f]{40}',step['uses'])
+        if 'run' in step and step['run'].strip().startswith('python '):assert step['run'].strip() in readme
 from fastapi.testclient import TestClient
 
 from app.rag.runtime import BusyError, HeavyRuntime, SingleFlightCache
