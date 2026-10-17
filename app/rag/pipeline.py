@@ -97,7 +97,7 @@ class RAGPipeline:
         )
         # The model signals unanswerable questions with a marker so the reply does not
         # depend on the model's ability to phrase a refusal in the question's language.
-        if NO_EVIDENCE_MARKER.lower() in answer.lower():
+        if answer.strip().casefold() == NO_EVIDENCE_MARKER.casefold():
             return _insufficient_evidence()
 
         verification = verify_answer(answer, evidence, question)

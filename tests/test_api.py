@@ -89,3 +89,43 @@ def test_uploading_the_same_content_twice_is_rejected(client):
     assert duplicate.status_code == 409
     assert "rapor.txt" in duplicate.json()["detail"]
     assert len(client.get("/documents").json()["documents"]) == 1
+
+
+@pytest.mark.parametrize("label", ["Kanıt", "Kanit", "Evidence"])
+def test_ask_round_trips_number_warnings_without_blocking(client, monkeypatch, label):
+    upload(client, text="Etkinlik 2024'te gerçekleşti.")
+    raw = f"  2025 ve 2026. [{label} 1] [Evidence 4]  "
+    monkeypatch.setattr(main.rag_pipeline, "generation_function", lambda *args, **kwargs: raw)
+    response = client.post("/ask", json={"question": "2025 yılında ne oldu?"})
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"answer", "sources", "verification"}
+    assert body["answer"] == raw
+    assert body["verification"] == {
+        "citations": [1], "invalid_citations": [4],
+        "unsupported_numbers": ["2026"], "question_only_numbers": ["2025"],
+    }
+    assert set(body["sources"][0]) == {
+        "evidence_number", "cited", "text", "filename", "document_id",
+        "page", "source", "chunk_id", "score",
+    }
+    assert body["sources"][0]["evidence_number"] == 1
+    assert body["sources"][0]["cited"] is True
+
+
+@pytest.mark.parametrize("raw,refused", [
+    (" \n no_evidence \t", True),
+    ("Ret işareti NO_EVIDENCE olarak yazılır. [Kanıt 1]", False),
+])
+def test_ask_marker_contract(client, monkeypatch, raw, refused):
+    upload(client)
+    monkeypatch.setattr(main.rag_pipeline, "generation_function", lambda *args, **kwargs: raw)
+    response = client.post("/ask", json={"question": "İşaret nedir?"})
+    assert response.status_code == 200
+    body = response.json()
+    if refused:
+        assert body["sources"] == []
+        assert body["verification"] is None
+    else:
+        assert body["answer"] == raw
+        assert body["verification"]["question_only_numbers"] == []

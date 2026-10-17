@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -41,6 +42,7 @@ def test_pipeline_indexes_documents_and_returns_sources(tmp_path: Path):
         "citations": [1],
         "invalid_citations": [],
         "unsupported_numbers": [],
+        "question_only_numbers": [],
     }
 
 
@@ -83,7 +85,7 @@ def test_pipeline_applies_embedding_prefixes(tmp_path: Path):
     assert pipeline.vector_store.chunks[0]["text"] == "The event happened in 2024."
 
 
-def test_pipeline_reports_insufficient_evidence_when_model_declines(tmp_path: Path):
+def test_pipeline_preserves_explanation_plus_marker(tmp_path: Path):
     document = tmp_path / "report.txt"
     document.write_text("The event happened in 2024.", encoding="utf-8")
 
@@ -99,7 +101,29 @@ def test_pipeline_reports_insufficient_evidence_when_model_declines(tmp_path: Pa
 
     result = pipeline.ask("Who is the mayor?")
 
-    assert result == {"answer": INSUFFICIENT_EVIDENCE, "sources": [], "verification": None}
+    # The former substring-based refusal expectation violated the exact-marker protocol.
+    assert result["answer"] == "The evidence does not mention the mayor.\n\nNO_EVIDENCE"
+    assert result["sources"]
+    assert result["verification"] is not None
+
+
+CASES = json.loads((Path(__file__).parent / "fixtures/answer_contract/cases.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda case: case["id"])
+def test_pipeline_answer_contract(case, monkeypatch):
+    # Isolate protocol behavior from retrieval quality and model inference.
+    evidence = [{"text": case.get("evidence", "Protokol açıklaması."), "score": 1.0}]
+    monkeypatch.setattr("app.rag.pipeline.retrieve", lambda *args, **kwargs: evidence)
+    pipeline = RAGPipeline(generation_function=lambda *args, **kwargs: case["answer"])
+    result = pipeline.ask(case.get("question", "Protokol nedir?"))
+    if case["refused"]:
+        assert result == {"answer": INSUFFICIENT_EVIDENCE, "sources": [], "verification": None}
+    else:
+        assert result["answer"] == case["answer"]  # Preserve whitespace and raw model text.
+        assert result["sources"][0]["text"] == evidence[0]["text"]
+        if "verification" in case:
+            assert result["verification"] == case["verification"]
 
 
 def test_pipeline_registers_documents_and_skips_duplicate_uploads(tmp_path: Path):

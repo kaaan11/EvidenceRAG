@@ -118,21 +118,23 @@ Yanıt biçimi:
   "verification": {
     "citations": [1],
     "invalid_citations": [],
-    "unsupported_numbers": []
+    "unsupported_numbers": [],
+    "question_only_numbers": []
   }
 }
 ```
 
-Kanıt threshold değerini geçmiyorsa LLM çağrılmaz ve sistem yeterli kanıt bulunamadığını açıkça bildirir. Kanıt threshold'u geçse de soruyu yanıtlamıyorsa model `NO_EVIDENCE` işareti döndürür; pipeline bu durumda da aynı mesajı boş kaynak listesiyle döner. Böylece ret mesajı küçük modelin dil becerisine bağlı kalmaz. Bu durumda `verification` alanı `null` olur.
+Kanıt threshold değerini geçmiyorsa LLM çağrılmaz ve sistem yeterli kanıt bulunamadığını açıkça bildirir. Model ret sinyali olarak yalnız `NO_EVIDENCE` döndürmelidir. Yanıtın çevresindeki whitespace temizlendikten sonra `casefold()` ile tam eşitlik aranır. ` no_evidence\n` ret sayılır; açıklama, alıntı veya `prefix_NO_EVIDENCE_suffix` içindeki marker ret sayılmaz. Ret yanıtında kaynak listesi boş ve `verification` alanı `null` olur. Diğer yanıtlarda modelin ham cevap metni korunur.
 
 ### Cevap doğrulaması
 
-Her cevap iki basit ama kesin kontrolden geçer (`app/rag/grounding.py`):
+Ret olmayan cevaplar için metinsel, heuristic uyarılar üretilir (`app/rag/grounding.py`); bunlar olgusal veya semantik doğrulama değildir:
 
-- **Atıflar:** Cevaptaki `[Kanıt N]` atıfları okunur. Var olan kanıtlara yapılan atıflar `citations` listesine girer ve ilgili kaynağın `cited` alanı `true` olur; olmayan bir kanıta yapılan atıflar `invalid_citations` listesine düşer.
-- **Sayılar:** Cevaptaki her sayının kanıt metinlerinde veya soruda geçmesi beklenir. Geçmeyenler `unsupported_numbers` listesinde döner. Türkçe yazım farkları (`18.000` / `18000`, `7,4` / `7.4`) eşit sayılır.
+- **Atıflar:** Canonical biçim `[Kanıt N]`; `[Kanit N]` ve `[Evidence N]` alias olarak kabul edilir. Üçü de harf duyarsızdır; parantezlerin içinde çevre whitespace ve etiket ile numara arasında en az bir whitespace kabul edilir. `N` negatif olmayan ASCII rakamlarından oluşur; yalnız `1..kaynak sayısı` aralığı geçerlidir. Var olan numaralar `citations` listesine, olmayanlar `invalid_citations` listesine girer. Tanınan atıfların tamamı sayı taramasından çıkarılır; geçersiz atıf numarası da sayı alarmı olmaz. Düz `Evidence 1` veya tek başına `[1]` bu protokolün atfı değildir.
+- **Sayılar:** Kanıt metinlerinde bulunan cevap sayıları için sayı uyarısı üretilmez. Yalnız soruda bulunanlar `question_only_numbers`, iki yerde de bulunmayanlar `unsupported_numbers` listesine girer. İki liste de boşken `[]` döner; sayılar cevapta görüldükleri yazımla ve sırayla, aynı yazım tekrarlanmadan sunulur. Sorudaki bir sayı kaynakta doğrulanmış sayılmaz.
+- **Normalizasyon:** Noktayla üçlü gruplanan Türkçe binlikler (`18.000` / `18000`, `5.800` / `5800`) eşittir. En az iki üçlü grup içeren virgüllü veya noktalı açık binlik biçimleri (`1,234,567` / `1.234.567` / `1234567`) eşittir. İlk grup 1–3, sonraki gruplar tam 3 rakamdır. Tek virgül ondalık kabul edilir (`7,4` / `7.4`); tek nokta geçerli binlik grubuna uymuyorsa ondalıktır. Dolayısıyla `5.800` ile `5,8`, ayrıca `1,234` ile `1234` eşit değildir. Karışık veya düzensiz ayraçlar otomatik locale tahminiyle silinmez; saatlerdeki `:` ondalık noktayla eşitlenmez. İşaret, birim, bilimsel gösterim veya aritmetik sonuç için semantik sayı çözümlemesi yapılmaz.
 
-Bu kontroller cevabı değiştirmez; web arayüzü sorun bulunduğunda cevabın altında uyarı gösterir. Yorumlanmış veya yeniden ifade edilmiş iddiaları yakalamazlar; uydurulmuş sayıları ve sahte atıfları yakalarlar.
+Bu uyarılar cevabı engellemez veya yeniden üretmez. `cited=true` yalnız o kaynak numarasına atıf yapıldığını gösterir. Bir sayının Kanıt 1'de bulunup cevabın Kanıt 2'ye atıf yapması boş uyarı listeleriyle sonuçlanabilir; bu, Kanıt 2'nin iddiayı desteklediğini göstermez. Negasyon, parafraz, iddia/kaynak eşleşmesi ve genel doğruluk denetlenmez. UI, `question_only_numbers` için "yalnız soruda geçiyor; kaynakta bulunamadı" uyarısı gösterir; yeni alanı içermeyen eski API yanıtları da desteklenir.
 
 ## Testler
 

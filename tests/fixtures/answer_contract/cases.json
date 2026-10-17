@@ -1,0 +1,14 @@
+[
+  {"id":"exact_marker","answer":"NO_EVIDENCE","refused":true},
+  {"id":"trimmed_marker","answer":" \n\tNO_EVIDENCE\r\n ","refused":true},
+  {"id":"casefold_marker","answer":"  No_eViDeNcE  ","refused":true},
+  {"id":"marker_explanation","answer":"Ret işareti NO_EVIDENCE olarak yazılır. [Kanıt 1]","refused":false},
+  {"id":"marker_word","answer":"prefix_NO_EVIDENCE_suffix","refused":false},
+  {"id":"quoted_marker","answer":"  Belgede \"NO_EVIDENCE\" yazıyor. [Kanıt 1]  ","refused":false},
+  {"id":"explanation_then_marker","answer":"The evidence does not mention the mayor.\n\nNO_EVIDENCE","refused":false},
+  {"id":"english_citation","answer":"The value is 22. [Evidence 1]","evidence":"Değer 22.","refused":false,"verification":{"citations":[1],"invalid_citations":[],"unsupported_numbers":[],"question_only_numbers":[]}},
+  {"id":"invalid_english_citation","answer":"Değer 22. [Evidence 4]","evidence":"Değer 22.","refused":false,"verification":{"citations":[],"invalid_citations":[4],"unsupported_numbers":[],"question_only_numbers":[]}},
+  {"id":"question_only","answer":"2025 yılında. [Kanıt 1]","question":"2025 yılında ne oldu?","evidence":"Bir etkinlik oldu.","refused":false,"verification":{"citations":[1],"invalid_citations":[],"unsupported_numbers":[],"question_only_numbers":["2025"]}},
+  {"id":"thousands_equivalence","answer":"Toplam 1,234,567. [Kanıt 1]","evidence":"Toplam 1.234.567.","refused":false,"verification":{"citations":[1],"invalid_citations":[],"unsupported_numbers":[],"question_only_numbers":[]}},
+  {"id":"distinct_quantities","answer":"Alan 5.800. [Kanıt 1]","evidence":"Alan 5,8.","refused":false,"verification":{"citations":[1],"invalid_citations":[],"unsupported_numbers":["5.800"],"question_only_numbers":[]}}
+]

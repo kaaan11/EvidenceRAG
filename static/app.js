@@ -244,13 +244,19 @@ function renderAnswer(answer, sources, verification) {
 function verificationWarnings(verification) {
     if (!verification) return [];
     const warnings = [];
-    if (verification.unsupported_numbers.length) {
+    const unsupported = verification.unsupported_numbers || [];
+    const questionOnly = verification.question_only_numbers || [];
+    const invalidCitations = verification.invalid_citations || [];
+    if (unsupported.length) {
         warnings.push(
-            `Cevaptaki şu sayılar kaynaklarda bulunamadı: ${verification.unsupported_numbers.join(", ")}. Bu değerleri kaynaklardan kontrol et.`
+            `Cevaptaki şu sayılar kaynaklarda veya soruda bulunamadı: ${unsupported.join(", ")}. Bu değerleri kaynaklardan kontrol et.`
         );
     }
-    if (verification.invalid_citations.length) {
-        const cited = verification.invalid_citations.map((number) => `Kanıt ${number}`).join(", ");
+    if (questionOnly.length) {
+        warnings.push(`Cevaptaki şu sayılar yalnız soruda geçiyor; kaynakta bulunamadı: ${questionOnly.join(", ")}.`);
+    }
+    if (invalidCitations.length) {
+        const cited = invalidCitations.map((number) => `Kanıt ${number}`).join(", ");
         warnings.push(`Cevap var olmayan kaynaklara atıf yapıyor: ${cited}.`);
     }
     return warnings;
@@ -282,7 +288,7 @@ function renderSources(sources) {
         badges.className = "source-badges";
         if (source.cited) {
             const citedBadge = textElement("span", "source-cited", "Atıf");
-            citedBadge.title = "Cevapta bu kaynağa atıf yapıldı";
+            citedBadge.title = "Cevapta bu kaynak numarasına atıf yapıldı; iddianın doğruluğu denetlenmedi.";
             badges.appendChild(citedBadge);
         }
         badges.appendChild(textElement("span", "source-score", `Benzerlik ${source.score.toFixed(3)}`));

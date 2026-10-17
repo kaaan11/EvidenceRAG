@@ -17,6 +17,10 @@ def test_messages_require_evidence_only_answers_and_citations():
     assert system["role"] == "system"
     assert "Only answer using the supplied evidence" in system["content"]
     assert "reply with only NO_EVIDENCE" in system["content"]
+    assert "complete reply" in system["content"]
+    assert "[Kanıt N]" in system["content"]
+    assert "[Kanit N]" in system["content"]
+    assert "[Evidence N]" in system["content"]
     assert "Do not show internal chunk IDs" in system["content"]
 
     assert user["role"] == "user"
