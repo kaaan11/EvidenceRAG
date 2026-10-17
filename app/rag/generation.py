@@ -1,6 +1,7 @@
 from .config import InputLimitError, effective_revision
 from .runtime import SingleFlightCache, configure_torch_threads, get_runtime
 import threading
+from .diagnostics import invoke_generator, mark_reason
 
 
 class LLMGenerationError(RuntimeError):
@@ -79,7 +80,7 @@ def _generate_answer(messages, model_name, max_new_tokens, text_generator, revis
             raise LLMGenerationError("Tokenizer is required for the complete prompt budget")
         with _inference_lock:
             validate_prompt_budget(messages, tokenizer, _context_window(generator), max_new_tokens)
-            output = generator(
+            output = invoke_generator(generator,
                 messages,
                 generation_config=GenerationConfig(max_new_tokens=max_new_tokens, do_sample=False),
                 return_full_text=False,
@@ -87,6 +88,8 @@ def _generate_answer(messages, model_name, max_new_tokens, text_generator, revis
             )
         return output[0]["generated_text"].strip()
     except InputLimitError:
+        mark_reason("input_limit")
         raise
     except Exception as exc:
+        mark_reason("model_error")
         raise LLMGenerationError(f"LLM generation failed: {exc}") from exc

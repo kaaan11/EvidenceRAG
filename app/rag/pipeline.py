@@ -13,6 +13,7 @@ from .prompt import NO_EVIDENCE_MARKER, build_messages
 from .retrieval import retrieve
 from .runtime import get_runtime
 from .vector_store import DuplicateDocumentError, VectorStore
+from .diagnostics import trace_scope, phase, mark_reason, invoke_generator
 
 
 INSUFFICIENT_EVIDENCE = (
@@ -30,6 +31,7 @@ class RAGPipeline:
         runtime=None,
     ):
         self.settings = settings or Settings()
+        self._default_generation = generation_function is generate_answer
         self.embedding_function = partial(embed_texts,revision=self.settings.embedding_model_revision) if embedding_function is embed_texts else embedding_function
         self.generation_function = partial(generate_answer,revision=self.settings.llm_model_revision) if generation_function is generate_answer else generation_function
         self.runtime = runtime or get_runtime()
@@ -99,25 +101,35 @@ class RAGPipeline:
         return self.vector_store.delete_document(document_id)
 
     def ask(self, question):
-        if len(question) > self.settings.max_question_chars:
-            raise InputLimitError(f"Question exceeds {self.settings.max_question_chars} characters")
-        return self.runtime.run_sync("ask", self._ask, question)
+        with trace_scope(self.settings, self.vector_store) as trace:
+            if len(question) > self.settings.max_question_chars:
+                mark_reason("input_limit")
+                raise InputLimitError(f"Question exceeds {self.settings.max_question_chars} characters")
+            result = self.runtime.run_sync("ask", self._ask, question)
+            result["diagnostics"] = trace.snapshot()
+            return result
 
     def _ask(self, question):
-        evidence = retrieve(
-            question,
-            self.vector_store,
-            top_k=self.settings.top_k,
-            relevance_threshold=self.settings.relevance_threshold,
-            embedding_function=self.embedding_function,
-            embedding_model_name=self.settings.embedding_model_name,
-            query_prefix=self.settings.embedding_query_prefix,
-        )
+        def query_embedding(*args, **kwargs):
+            with phase("query_embedding"):
+                return self.embedding_function(*args, **kwargs)
+        with phase("retrieval"):
+            evidence = retrieve(
+                question,
+                self.vector_store,
+                top_k=self.settings.top_k,
+                relevance_threshold=self.settings.relevance_threshold,
+                embedding_function=query_embedding,
+                embedding_model_name=self.settings.embedding_model_name,
+                query_prefix=self.settings.embedding_query_prefix,
+            )
         if not evidence:
+            mark_reason("retrieval_no_evidence")
             return _insufficient_evidence()
 
         messages = build_messages(question, evidence)
-        answer = self.generation_function(
+        generator = self.generation_function if self._default_generation else partial(invoke_generator, self.generation_function)
+        answer = generator(
             messages,
             model_name=self.settings.llm_model_name,
             max_new_tokens=self.settings.max_new_tokens,
@@ -125,9 +137,12 @@ class RAGPipeline:
         # The model signals unanswerable questions with a marker so the reply does not
         # depend on the model's ability to phrase a refusal in the question's language.
         if answer.strip().casefold() == NO_EVIDENCE_MARKER.casefold():
+            mark_reason("model_no_evidence")
             return _insufficient_evidence()
 
-        verification = verify_answer(answer, evidence, question)
+        with phase("verification"):
+            verification = verify_answer(answer, evidence, question)
+        mark_reason("answered")
         return {
             "answer": answer,
             "sources": _sources_from(evidence, verification["citations"]),
