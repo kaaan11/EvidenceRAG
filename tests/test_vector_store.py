@@ -239,3 +239,45 @@ def test_service_write_guard_blocks_before_live_mutation():
     store=VectorStore(write_guard=denied)
     with pytest.raises(WriterLeaseError): store.add_document(*make_document("a","a",[[1.0,0.0]]))
     assert store.index is None and store.documents=={} and store.chunks==[]
+
+
+@pytest.mark.parametrize("change", ["revision","prefix","chunk_size","ingestion"])
+def test_index_identity_changes_reject_without_modifying_file(tmp_path,change):
+    from dataclasses import replace
+    from app.rag.config import Settings
+    settings=Settings();signature=settings.embedding_signature();path=tmp_path/"store.npz"
+    store=VectorStore(persist_path=path,signature=signature)
+    vectors=[[1.0]+[0.0]*383]
+    store.add_document(*make_document("a","a",vectors));before=path.read_bytes()
+    changed={"revision":{"embedding_model_revision":"b"*40},"prefix":{"embedding_query_prefix":"different: "},
+             "chunk_size":{"chunk_size":900},"ingestion":{"ingestion_version":2}}[change]
+    with pytest.raises(IncompatibleStoreError):VectorStore(persist_path=path,signature=replace(settings,**changed).embedding_signature())
+    assert path.read_bytes()==before
+    # LLM-only identity is intentionally absent from the embedding index signature.
+    assert VectorStore(persist_path=path,signature=replace(settings,llm_model_revision="b"*40).embedding_signature()).index.ntotal==1
+
+
+@pytest.mark.parametrize("version", [1,2])
+def test_legacy_unknown_revision_file_is_never_relabelled(tmp_path,version):
+    import json
+    from app.rag.config import Settings
+    path=tmp_path/"old.npz"
+    meta={"version":version,"signature":{"embedding_model_name":"intfloat/multilingual-e5-small"},"documents":[],"chunks":[]}
+    np.savez(path,embeddings=np.empty((0,0),dtype="float32"),meta=np.array(json.dumps(meta)))
+    before=path.read_bytes()
+    with pytest.raises(IncompatibleStoreError):VectorStore(persist_path=path,signature=Settings().embedding_signature())
+    assert path.read_bytes()==before
+
+
+def test_dimension_metadata_mismatch_is_not_silently_loaded(tmp_path):
+    import json
+    path=tmp_path/"store.npz"
+    store=VectorStore(persist_path=path)
+    store.add_document(*make_document("a","a",[[1.0,0.0]]))
+    with np.load(path,allow_pickle=False) as data:
+        vectors=data["embeddings"];meta=json.loads(str(data["meta"]))
+    meta["embedding_dimension"]=99
+    np.savez(path,embeddings=vectors,meta=np.array(json.dumps(meta)))
+    before=path.read_bytes()
+    with pytest.raises(IncompatibleStoreError,match="dimension"):VectorStore(persist_path=path)
+    assert path.read_bytes()==before

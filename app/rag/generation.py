@@ -1,4 +1,4 @@
-from .config import InputLimitError
+from .config import InputLimitError, effective_revision
 from .runtime import SingleFlightCache, configure_torch_threads, get_runtime
 import threading
 
@@ -12,19 +12,20 @@ _inference_lock = threading.Lock()
 
 
 def get_text_generator(model_name, revision=None):
+    revision=effective_revision("llm",model_name,revision)
     return get_runtime().run_sync("load", _cache.get, (model_name, revision),
         lambda: _create_text_generator(model_name, revision))
 
 
 def _create_text_generator(model_name, revision):
     import torch
-    from transformers import pipeline
+    from transformers import pipeline, AutoTokenizer
     configure_torch_threads(torch)
 
     # Half-precision weights are several times slower on CPUs without native bf16 support.
     dtype = "auto" if torch.cuda.is_available() else torch.float32
-    kwargs = {"revision": revision} if revision is not None else {}
-    generator = pipeline("text-generation", model=model_name, dtype=dtype, **kwargs)
+    tokenizer=AutoTokenizer.from_pretrained(model_name,revision=revision)
+    generator = pipeline("text-generation", model=model_name, tokenizer=tokenizer,dtype=dtype,revision=revision)
     # Answers should be reproducible, so drop the model's default sampling settings
     # instead of overriding them per call (which makes transformers warn on every request).
     defaults = generator.model.generation_config
@@ -63,15 +64,16 @@ def generate_answer(
     model_name="Qwen/Qwen2.5-1.5B-Instruct",
     max_new_tokens=256,
     text_generator=None,
+    revision=None,
 ):
-    return get_runtime().run_sync("generation", _generate_answer, messages, model_name, max_new_tokens, text_generator)
+    return get_runtime().run_sync("generation", _generate_answer, messages, model_name, max_new_tokens, text_generator, revision)
 
 
-def _generate_answer(messages, model_name, max_new_tokens, text_generator):
+def _generate_answer(messages, model_name, max_new_tokens, text_generator, revision):
     try:
         from transformers import GenerationConfig
 
-        generator = text_generator or get_text_generator(model_name)
+        generator = text_generator or get_text_generator(model_name,revision=revision)
         tokenizer = getattr(generator, "tokenizer", None)
         if tokenizer is None:
             raise LLMGenerationError("Tokenizer is required for the complete prompt budget")

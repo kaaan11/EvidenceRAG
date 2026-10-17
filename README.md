@@ -156,7 +156,23 @@ Doğrulanan platform Windows 11 x64 / Python 3.12.10'dur: native FAISS reload, I
 
 ### Embedding ayarlarını değiştirmek
 
-Kayıtlı index, hangi embedding modeli ve ön eklerle oluşturulduğunu saklar. `EMBEDDING_MODEL_NAME`, `EMBEDDING_QUERY_PREFIX` veya `EMBEDDING_PASSAGE_PREFIX` değiştirilirse eski vektörler yeni modelle karşılaştırılamaz; uygulama bu durumda sessizce yanlış sonuç döndürmek yerine açık bir hatayla başlamaz. Eski ayarlara dönün ya da `data/index/store.npz` dosyasını silip dokümanları yeniden yükleyin.
+Kayıtlı index, sürümlü embedding model/revision, aynı artifact tokenizer kimliği, prefix, L2 normalization, beklenen/etkili dimension ve ingestion/chunking kimliğini saklar. Yeni store formatı `2`'dir. `models.lock.json` resmî Hugging Face metadata'sından gözlenen gerçek immutable E5/Qwen commit'lerini, kaynak URL'lerini ve config hash'lerini içerir; uygulama Git commit'i model revision diye kullanılmaz. Default model adları korunur. `EMBEDDING_MODEL_REVISION` ve `LLM_MODEL_REVISION` ayrı 40 karakterlik lowercase SHA ayarlarıdır; custom model deposu için explicit revision gerekir. Tokenizer aynı repository/revision'a sabitlenir; branch/tag pin sayılmaz. Loader ve single-flight cache aynı etkili kimliği kullanır.
+
+`Settings.model_identity()` deterministik model/tokenizer ve index kimliğini, `embedding_signature()` yalnız vektör üretimini etkileyen kimliği verir. `INGESTION_VERSION=1`, `CHUNKER_STRATEGY=legacy_character`, size/overlap imzaya dahildir. Yalnız LLM revision değişimi embedding index'ini reddetmez. Gerçek embedding adapter'ı model yüklendikten sonra dimension/sequence metadata'sını ve encode çıktısının boyutunu denetler; store ayrıca NPZ dimension metadata'sını matrise karşı kontrol eder. Runtime çıktısı startup'ta ölçülmüş gibi sunulmaz. Manifestteki MIT/Apache-2.0 bilgileri model artifact kartlarına aittir; repository kaynak kodu lisansı seçilmemiştir.
+
+### Eski index'ten açık geçiş ve rollback
+
+Revision'sız/eski format NPZ yeni SHA ile etiketlenmez; dosya değiştirilmeden açık hata verilir. Eski dosyayı silmeyin veya startup rebuild beklemeyin. Servisi durdurun, eski kod/ayarları ve index dizinini yedekleyin; yeni ayrı `INDEX_DIR` ile özgün belgelerden reindex yapın. Windows PowerShell örneği:
+
+```powershell
+# Service stopped; choose new, unused backup/index directory names.
+Copy-Item -LiteralPath data/index -Destination data/index-backup -Recurse
+$env:INDEX_DIR='data/index-v2'
+uvicorn main:app --host 127.0.0.1 --no-proxy-headers
+# Re-upload the originals explicitly, then verify /documents and /health.
+```
+
+Özgün upload dosyaları API işleminden sonra silinir; normalized NPZ chunk'larından kayıpsız PDF/Markdown geri üretimi yapılmaz. Orijinaller yoksa reindex somut olarak engellidir; eski dizini koruyup orijinalleri temin edin. Otomatik uzun süre belge saklama eklenmedi. Rollback için servisi durdurun, eski kod ve eski model/ingestion ayarlarıyla `INDEX_DIR`'i korunmuş eski dizine/backup'a döndürün; v2 dosyasını eski kodun okuyacağını varsaymayın. Yeni dizini eski dosyanın üstüne kopyalamayın. Küçük sentetik vektör/gerçek FAISS migration ve eski T05 okuyucusuyla rollback doğrulandı; gerçek-model/gerçek kullanıcı verisi migration'ı çalıştırılmadı.
 
 ### Soru sorma
 

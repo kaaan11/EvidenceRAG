@@ -6,6 +6,7 @@ def test_settings_read_environment_when_created(monkeypatch):
     monkeypatch.setenv("TOP_K", "7")
     monkeypatch.setenv("RELEVANCE_THRESHOLD", "0.5")
     monkeypatch.setenv("LLM_MODEL_NAME", "some/model")
+    monkeypatch.setenv("LLM_MODEL_REVISION", "a" * 40)  # Synthetic config identity; no model load.
 
     settings = Settings()
 
@@ -82,3 +83,33 @@ def test_preload_boolean_is_explicit(monkeypatch):
 
 def test_torch_threads_reject_nonpositive_setting():
     with pytest.raises(ValueError,match="TORCH_NUM_THREADS"): Settings(torch_num_threads=0)
+
+
+def test_model_manifest_pins_and_identity_are_deterministic():
+    import re
+    from app.rag.config import model_manifest
+    settings=Settings()
+    assert settings.model_identity()==Settings().model_identity()
+    for record in model_manifest().values():
+        assert re.fullmatch("[0-9a-f]{40}",record["revision"])
+        assert record["tokenizer_revision"]==record["revision"]
+        assert record["api_source"].startswith("https://huggingface.co/api/models/")
+    assert settings.embedding_signature()["embedding_dimension"]==384
+    assert settings.embedding_signature()["ingestion"]["strategy"]=="legacy_character"
+
+
+@pytest.mark.parametrize("revision", ["main","v1.0","short","A"*40])
+def test_mutable_or_noncanonical_revision_is_rejected(revision):
+    with pytest.raises(ValueError,match="immutable"): Settings(embedding_model_revision=revision)
+
+
+def test_custom_model_requires_explicit_revision():
+    with pytest.raises(ValueError,match="required"): Settings(llm_model_name="custom/model")
+
+
+def test_llm_only_revision_does_not_change_index_identity():
+    from dataclasses import replace
+    original=Settings()
+    changed=replace(original,llm_model_revision="b"*40)
+    assert original.embedding_signature()==changed.embedding_signature()
+    assert original.model_identity()!=changed.model_identity()

@@ -1,4 +1,5 @@
 import hashlib
+from functools import partial
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,8 +30,8 @@ class RAGPipeline:
         runtime=None,
     ):
         self.settings = settings or Settings()
-        self.embedding_function = embedding_function
-        self.generation_function = generation_function
+        self.embedding_function = partial(embed_texts,revision=self.settings.embedding_model_revision) if embedding_function is embed_texts else embedding_function
+        self.generation_function = partial(generate_answer,revision=self.settings.llm_model_revision) if generation_function is generate_answer else generation_function
         self.runtime = runtime or get_runtime()
         self.vector_store = vector_store or VectorStore(
             max_chunks=self.settings.max_store_chunks,
@@ -136,8 +137,8 @@ class RAGPipeline:
     def preload_models(self):
         from .embedding import get_embedding_model
         from .generation import get_text_generator
-        get_embedding_model(self.settings.embedding_model_name)
-        get_text_generator(self.settings.llm_model_name)
+        get_embedding_model(self.settings.embedding_model_name,revision=self.settings.embedding_model_revision)
+        get_text_generator(self.settings.llm_model_name,revision=self.settings.llm_model_revision)
 
 
 def _insufficient_evidence():
