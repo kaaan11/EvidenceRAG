@@ -2,6 +2,10 @@ import json
 import os
 import threading
 from pathlib import Path
+from dataclasses import dataclass
+import logging
+import tempfile
+import uuid
 
 import numpy as np
 import faiss
@@ -26,11 +30,32 @@ class IncompatibleStoreError(RuntimeError):
     """Raised when a saved store was built with different embedding settings."""
 
 
+class StoreWriteError(RuntimeError):
+    def __init__(self, operation_id):
+        super().__init__(f"Store write failed before commit; operation {operation_id}")
+        self.operation_id = operation_id
+        self.commit_status = "not_committed"
+
+
+class StoreCommitUncertainError(StoreWriteError):
+    def __init__(self, operation_id):
+        RuntimeError.__init__(self, f"Store commit is visible but durability is uncertain; reconcile operation {operation_id} before retry")
+        self.operation_id = operation_id
+        self.commit_status = "durability_uncertain"
+
+
+@dataclass(frozen=True)
+class _State:
+    index: object
+    chunks: list
+    documents: dict
+    operation_id: str | None = None
+
+
 class VectorStore:
-    def __init__(self, persist_path=None, signature=None, *, max_chunks=20000, max_text_bytes=64 * 1024 * 1024):
-        self.index = None
-        self.chunks = []
-        self.documents = {}
+    def __init__(self, persist_path=None, signature=None, *, max_chunks=20000, max_text_bytes=64 * 1024 * 1024, write_guard=None):
+        self._state = _State(None, [], {})
+        self.write_guard = write_guard  # Service-scoped lease; standalone stores do not acquire leases.
         self.max_chunks = max_chunks
         self.max_text_bytes = max_text_bytes
         # Identifies how the stored embeddings were produced, so a saved store isn't
@@ -46,6 +71,18 @@ class VectorStore:
             self._load()
 
     @property
+    def index(self): return self._state.index
+
+    @property
+    def chunks(self): return self._state.chunks
+
+    @property
+    def documents(self): return self._state.documents
+
+    @property
+    def operation_id(self): return self._state.operation_id
+
+    @property
     def is_empty(self):
         return not self.chunks
 
@@ -54,21 +91,21 @@ class VectorStore:
         if embeddings is None:
             return
         with self._lock:
+            if self.write_guard: self.write_guard()
             self._check_capacity(chunks)
-            self._append(chunks, embeddings)
-            self._save()
+            self._commit(self._candidate_add(chunks, embeddings))
 
     def add_document(self, document, chunks, embeddings, *, max_chunks=None, max_text_bytes=None):
         embeddings = self._prepare_embeddings(chunks, embeddings)
         with self._lock:
+            if self.write_guard: self.write_guard()
             existing = self._find_by_hash(document.get("sha256"))
             if existing:
                 raise DuplicateDocumentError(existing)
             self._check_capacity(chunks, max_chunks=max_chunks, max_text_bytes=max_text_bytes)
-            if embeddings is not None:
-                self._append(chunks, embeddings)
-            self.documents[document["document_id"]] = dict(document)
-            self._save()
+            candidate = self._candidate_add(chunks, embeddings)
+            candidate.documents[document["document_id"]] = dict(document)
+            self._commit(candidate)
 
     def check_capacity(self, chunks, *, max_chunks=None, max_text_bytes=None):
         """Early advisory check; add_document rechecks under the mutation lock."""
@@ -99,6 +136,7 @@ class VectorStore:
 
     def delete_document(self, document_id):
         with self._lock:
+            if self.write_guard: self.write_guard()
             if document_id not in self.documents:
                 return False
 
@@ -109,14 +147,14 @@ class VectorStore:
             ]
             # IndexFlat has no stable ids, so rebuild it from the remaining vectors.
             embeddings = self._all_embeddings()[keep]
-            self.chunks = [self.chunks[position] for position in keep]
-            self.index = None
+            chunks = [self.chunks[position] for position in keep]
+            index = None
             if len(keep):
-                self.index = faiss.IndexFlatIP(embeddings.shape[1])
-                self.index.add(embeddings)
+                index = faiss.IndexFlatIP(embeddings.shape[1])
+                index.add(embeddings)
 
-            del self.documents[document_id]
-            self._save()
+            documents = {key: value for key,value in self.documents.items() if key != document_id}
+            self._commit(_State(index, chunks, documents, uuid.uuid4().hex))
             return True
 
     def search(self, query_embedding, top_k=5):
@@ -165,14 +203,16 @@ class VectorStore:
         faiss.normalize_L2(embeddings)
         return embeddings
 
-    def _append(self, chunks, embeddings):
-        if self.index is None:
-            self.index = faiss.IndexFlatIP(embeddings.shape[1])
-        elif self.index.d != embeddings.shape[1]:
+    def _candidate_add(self, chunks, embeddings):
+        index = faiss.clone_index(self.index) if self.index is not None else None
+        if embeddings is not None and index is None:
+            index = faiss.IndexFlatIP(embeddings.shape[1])
+        elif embeddings is not None and index.d != embeddings.shape[1]:
             raise ValueError("Embedding dimension does not match the vector store")
-
-        self.index.add(embeddings)
-        self.chunks.extend(chunks)
+        if embeddings is not None:
+            index.add(embeddings)
+        appended = [{"text": chunk["text"], "metadata": dict(chunk["metadata"])} for chunk in chunks]
+        return _State(index, [*self.chunks, *appended], dict(self.documents), uuid.uuid4().hex)
 
     def _find_by_hash(self, sha256):
         if not sha256:
@@ -183,27 +223,51 @@ class VectorStore:
         )
 
     def _all_embeddings(self):
-        if self.index is None or self.index.ntotal == 0:
+        return self._vectors(self.index)
+
+    @staticmethod
+    def _vectors(index):
+        if index is None or index.ntotal == 0:
             return np.empty((0, 0), dtype="float32")
-        return self.index.reconstruct_n(0, self.index.ntotal)
+        return index.reconstruct_n(0, index.ntotal)
 
-    def _save(self):
+    def _commit(self, candidate):
         if not self.persist_path:
+            self._state = candidate
             return
+        temporary_path = None
+        try:
+            meta = {"version": STORE_FORMAT_VERSION, "signature": self.signature,
+                    "documents": list(candidate.documents.values()), "chunks": candidate.chunks,
+                    "operation_id": candidate.operation_id}
+            serialized = json.dumps(meta)
+            self.persist_path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(mode="wb", dir=self.persist_path.parent,
+                    prefix=f".{self.persist_path.name}.", suffix=".tmp", delete=False) as file:
+                temporary_path = Path(file.name)
+                np.savez(file, embeddings=self._vectors(candidate.index), meta=np.array(serialized))
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary_path, self.persist_path)  # Visibility commit point.
+        except Exception as exc:
+            raise StoreWriteError(candidate.operation_id) from exc
+        finally:
+            if temporary_path is not None:
+                try: temporary_path.unlink(missing_ok=True)
+                except OSError: logging.getLogger(__name__).error("Candidate temporary file cleanup failed")
+        # One pointer publishes the coherent RAM state while the same lock is held.
+        self._state = candidate
+        try:
+            self._sync_directory()
+        except OSError as exc:
+            raise StoreCommitUncertainError(candidate.operation_id) from exc
 
-        meta = {
-            "version": STORE_FORMAT_VERSION,
-            "signature": self.signature,
-            "documents": list(self.documents.values()),
-            "chunks": self.chunks,
-        }
-        self.persist_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = self.persist_path.with_name(self.persist_path.name + ".tmp")
-        # Everything goes into one file that replaces the old one in a single step, so a
-        # crash mid-write leaves the previous store intact instead of a mismatched pair.
-        with open(temporary_path, "wb") as file:
-            np.savez(file, embeddings=self._all_embeddings(), meta=np.array(json.dumps(meta)))
-        os.replace(temporary_path, self.persist_path)
+    def _sync_directory(self):
+        # Windows supports pre-replace file fsync here, not POSIX directory fsync.
+        if os.name == "nt": return
+        descriptor = os.open(self.persist_path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try: os.fsync(descriptor)
+        finally: os.close(descriptor)
 
     def _load(self):
         with np.load(self.persist_path, allow_pickle=False) as data:
@@ -227,8 +291,9 @@ class VectorStore:
                 f"{len(meta['chunks'])} chunks but {len(embeddings)} embeddings."
             )
 
-        self.chunks = meta["chunks"]
-        self.documents = {document["document_id"]: document for document in meta["documents"]}
+        index = None
         if len(embeddings):
-            self.index = faiss.IndexFlatIP(embeddings.shape[1])
-            self.index.add(np.ascontiguousarray(embeddings, dtype="float32"))
+            index = faiss.IndexFlatIP(embeddings.shape[1])
+            index.add(np.ascontiguousarray(embeddings, dtype="float32"))
+        self._state = _State(index, meta["chunks"],
+            {document["document_id"]: document for document in meta["documents"]}, meta.get("operation_id"))

@@ -98,7 +98,7 @@ def test_api_busy_has_retry_after_and_health_list_do_not_wait(monkeypatch):
     monkeypatch.setattr(main.rag_pipeline,"ask",hold)
     async def scenario():
         transport=httpx2.ASGITransport(app=main.app,client=("127.0.0.1",1))
-        async with httpx2.AsyncClient(transport=transport,base_url="http://127.0.0.1") as client:
+        async with main.lifespan(main.app), httpx2.AsyncClient(transport=transport,base_url="http://127.0.0.1") as client:
             first=asyncio.create_task(client.post("/ask",json={"question":"ok"}))
             await event_ready(entered)
             try:
@@ -161,7 +161,7 @@ def test_running_upload_cancel_keeps_file_until_worker_finishes(monkeypatch):
     monkeypatch.setattr(main.rag_pipeline,"index_file",index)
     async def scenario():
         transport=httpx2.ASGITransport(app=main.app,client=("127.0.0.1",1))
-        async with httpx2.AsyncClient(transport=transport,base_url="http://127.0.0.1") as client:
+        async with main.lifespan(main.app), httpx2.AsyncClient(transport=transport,base_url="http://127.0.0.1") as client:
             task=asyncio.create_task(client.post("/documents",files={"file":("a.txt",b"abc")}))
             await event_ready(entered)
             task.cancel(); await asyncio.sleep(0.02)

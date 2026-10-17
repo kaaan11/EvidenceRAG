@@ -24,7 +24,7 @@ Yerel instruct LLM (Qwen2.5, chat formatı)
 Yanıt ve kaynak chunk'ları
 ```
 
-PDF sayfa numaraları; dosya adı, document id, source ve chunk id ile birlikte metadata olarak korunur. Index, chunk'lar ve doküman kayıtları `data/index/store.npz` dosyasına kaydedilir ve uygulama yeniden başlatıldığında otomatik yüklenir. Dosya her değişiklikte tek adımda yerine yazılır; yazma yarıda kesilirse önceki kayıt bozulmaz.
+PDF sayfa numaraları; dosya adı, document id, source ve chunk id ile birlikte metadata olarak korunur. Index, chunk'lar ve doküman kayıtları `data/index/store.npz` dosyasına kaydedilir ve uygulama yeniden başlatıldığında otomatik yüklenir. Yeni candidate state kaydedilip replace edilmeden canlı index'e yayımlanmaz. Commit öncesi kayıt hatası eski RAM/disk durumunu korur; commit sonrası durability belirsizliği ayrı hata olarak bildirilir. Bu sözleşme ölçülmüş power-loss dayanıklılığı değildir.
 
 ## Kurulum
 
@@ -140,6 +140,18 @@ curl -X DELETE http://127.0.0.1:8000/documents/<document_id>
 
 Silinen dokümanın chunk'ları index'ten çıkarılır ve artık kanıt olarak kullanılmaz. Web arayüzündeki "Yüklü dokümanlar" listesi de aynı işlemleri yapar.
 
+### Kayıt işlemi ve servis lease'i
+
+Add/delete aynı mutasyon kilidi altında candidate FAISS index'i, chunk listesi ve belge kayıtlarını oluşturur; quota/duplicate kontrolleri aynı kritik bölümdedir. Candidate hedefle aynı dizindeki benzersiz temporary NPZ'ye yazılır, file flush/fsync yapılır; `os.replace` görünürlük commit noktasıdır. Sonrasında tek state pointer'ı RAM'e yayımlanır. Açma/serialization/yazma/file-fsync/replace öncesi hata `not_committed` durumudur; eski RAM, arama, duplicate kontrolü ve reload korunur. Geçici dosya normal başarı/hata yollarında temizlenir; hedef dosya recovery bahanesiyle silinmez.
+
+Replace sonrası directory sync hatası `durability_uncertain` verir: işlem görünür olabilir; temiz rollback veya normal başarı ack'i sayılmaz. API `500` yanıtında string `detail`, `operation_id` ve `commit_status` döndürür. Kör retry yapmadan belge listesini ve `/health.store_operation_id` değerini kontrol edin. Son operation ID NPZ metadata'sında da saklanır. Windows'ta file fsync uygulanır, POSIX directory-fsync uygulanmaz; POSIX yolunda directory fsync kodu vardır fakat bu Windows koşusunda doğrulanmadı. Elektrik kesintisi ve tüm dosya sistemleri için dayanıklılık garantisi yoktur.
+
+Servis startup'ında ilk mutable kullanım öncesi index dizinindeki `.writer.lock` için OS lease alınır. Windows byte-range `msvcrt` kilidi; POSIX'te `fcntl.flock` kullanılır. Lockfile'ın varlığı veya PID sahiplik kanıtı değildir; process öldüğünde OS kilidi bırakır. Aynı dizine ikinci servis ilk mutasyondan önce hata verir; farklı dizinler bağımsızdır. Uvicorn `--workers 1` kullanın; aynı index'e ikinci reload/worker eşzamanlı yazıcı olarak başlamaz.
+
+Shutdown yeni model/mutasyon işlerini reddeder; delete dahil başlamış native işler drain edilir. Lifespan/istemci iptali OS lease'i erken bırakmaz: ayrı watcher gerçek işler ve bekleyen ticket'lar bitene kadar kilidi tutar. Drain edilemeyen native iş varsa lease süreç gerçekten bitene kadar tutulabilir; sert thread sonlandırması yoktur. Servis lifespan'ını devre dışı bırakmak desteklenmez. Standalone `VectorStore` constructor'ları lease almaz; read/reload ve in-memory nesneler sahte çakışma yaşamaz. Standalone kalıcı yazıcılar için lease kullanımı çağıranın sorumluluğudur; bu mekanizma kötü niyetli yerel prosese karşı dosya ACL/auth yerine geçmez.
+
+Doğrulanan platform Windows 11 x64 / Python 3.12.10'dur: native FAISS reload, I/O fault matrisi, iki gerçek prosesin OS kilidi, process kill sonrası release ve native iş + client/shutdown iptal testi çalıştırıldı. POSIX/NFS/ağ dosya sistemi ve gerçek power-loss testleri çalıştırılmadı.
+
 ### Embedding ayarlarını değiştirmek
 
 Kayıtlı index, hangi embedding modeli ve ön eklerle oluşturulduğunu saklar. `EMBEDDING_MODEL_NAME`, `EMBEDDING_QUERY_PREFIX` veya `EMBEDDING_PASSAGE_PREFIX` değiştirilirse eski vektörler yeni modelle karşılaştırılamaz; uygulama bu durumda sessizce yanlış sonuç döndürmek yerine açık bir hatayla başlamaz. Eski ayarlara dönün ya da `data/index/store.npz` dosyasını silip dokümanları yeniden yükleyin.
@@ -251,8 +263,8 @@ requirements.txt
 
 ## Bilinen sınırlamalar
 
-- Index tek proses için tasarlanmıştır; aynı `INDEX_DIR`'i kullanan birden fazla uvicorn worker'ı birbirinin değişikliklerini görmez.
-- Her yükleme ve silmede index dosyanın tamamı yeniden yazılır; bu, birkaç bin dokümana kadar sorun olmaz.
+- Index tek servis yazıcısı içindir; aynı `INDEX_DIR`'e ikinci servis OS lease alamaz. Read/reload nesneleri ayrı sözleşmedir.
+- Her yükleme ve silmede candidate index ve tam NPZ yazımı O(N) iş yapar; bu donanımda kapasite/p95 ölçülmedi.
 - PDF metin çıkarma, taranmış görüntüler için OCR yapmaz.
 - Şu anda yalnızca PDF, TXT ve Markdown desteklenir.
 - Cevap doğrulaması atıfları ve sayıları kontrol eder; sayı içermeyen iddiaların kanıta dayanıp dayanmadığını denetlemez.
