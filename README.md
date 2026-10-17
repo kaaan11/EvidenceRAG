@@ -242,17 +242,18 @@ Testler chunk metadata'sını, embedding/vector retrieval akışını, prompt k�
 `experiments/eval/` altında Türkçe bir değerlendirme seti bulunur: birbirine benzeyen iki belediye raporu ile bir izin yönergesi ve bunlar üzerine 41 soru. Sorular dört gruptadır: cevaplanabilir (Türkçe ve İngilizce), aynı konuda olup cevabı dokümanlarda bulunmayan "tuzak" sorular ve tamamen konu dışı sorular.
 
 ```bash
-python experiments/evaluate.py          # retrieval ve threshold taraması, ~1 dakika
-python experiments/evaluate.py --llm    # cevapları da üretip puanlar, CPU'da ~15 dakika
+python experiments/evaluate.py --preflight-only  # kaynak/hash/span kontrolü; model yüklemez
+python experiments/evaluate.py                  # gerçek retrieval; cache/bütçe gerekir
+python experiments/evaluate.py --llm            # gerçek generation; ayrıca cache/bütçe gerekir
 ```
 
 Betik uygulamayla aynı ayarları (environment ve `.env`) kullanır; `--threshold` ve `--top-k` ile geçici olarak değiştirilebilir. Ölçülenler:
 
-- **Retrieval:** doğru chunk'ın ilk sırada (hit@1) ve ilk `TOP_K` içinde (hit@k) bulunma oranı, MRR.
-- **Threshold taraması:** her eşik için korunan cevaplanabilir soru oranı ve elenen konu dışı soru oranı. Önerilen eşik, en düşük ilgili skor ile en yüksek konu dışı skorun ortasıdır.
-- **Cevaplar (`--llm`):** cevaplanabilir sorularda doğru / yanlış / reddedildi; cevaplanamayan sorularda doğru ret / uydurma; doğrulama bulguları ve cevap süresi.
+- **Retrieval:** kaynak düzeyinde geçerli qrel OR/AND grubunun threshold öncesi hit@1, hit@k ve tamamlanma rank'ına göre group MRR değeri. Chunk kapsam kaybı paydadan çıkarılmaz; kaynak/oracle hatası ayrı kalite kapısını düşürür.
+- **Threshold:** yalnız açık kalibrasyon verisinde `--tune` ve önceden tanımlı objective/constraint kullanılır. Eski 41 soru `legacy_regression` olarak korunur; yeni holdout değildir ve otomatik yeni eşik seçmez. Holdout'a kaydedilmiş seçim `--frozen-selection` ile sabit uygulanır.
+- **Cevaplar (`--llm`):** `lexical_match`, ret ve hata; bağımsız kökenli semantik rubric ayrı tutulur. Lexical eşleşme doğru cevap garantisi değildir. Generation süresi T07 invocation bayrağına göre hesaplanır; model retleri ve başlatılmış hatalar da sayılır.
 
-Her çalıştırma `experiments/results/` altına bir JSON raporu yazar (git'e eklenmez). Model, prompt veya eşik değişikliklerinden önce ve sonra çalıştırarak karşılaştırın.
+Her çalıştırma `experiments/results/` altına şema 2 JSON raporu yazar (git'e eklenmez); `--output` başka yerel hedef seçebilir. Dış dataset/corpus yolları desteklenir. Kaynak/model/prompt/index/split fingerprint'leri ve ham satırlar korunur; uyumsuz girdiler uyarısız birleştirilmez. Özel raporları public CI artifact'ına koymayın. Ayrıntılı şema, offset/context bütçesi ve ablation sözleşmesi: [experiments/eval/README.md](experiments/eval/README.md). Bu teslimde gerçek-model kalite/direnç baseline'ı ölçülmedi; `eval-history/fixture-baseline.json` yalnız sentetik mekanik örnektir.
 
 ## Proje yapısı
 

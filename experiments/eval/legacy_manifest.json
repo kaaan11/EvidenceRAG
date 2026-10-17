@@ -1,0 +1,223 @@
+{
+  "schema_version": 2,
+  "dataset_sha256": "320973e550b87579e59a7e28c628ad336085fb2b722ced3e1587bf1e4161fbe5",
+  "provenance": "Existing 41 questions, previously exposed to tuning; not untouched holdout",
+  "memberships": {
+    "yv-su-kaybi": {
+      "split": "legacy_regression",
+      "fact_group": "yv-su-kaybi",
+      "document": "ornek_rapor.md"
+    },
+    "yv-boru-maliyet": {
+      "split": "legacy_regression",
+      "fact_group": "yv-boru-maliyet",
+      "document": "ornek_rapor.md"
+    },
+    "yv-kredi": {
+      "split": "legacy_regression",
+      "fact_group": "yv-kredi",
+      "document": "ornek_rapor.md"
+    },
+    "yv-otobus": {
+      "split": "legacy_regression",
+      "fact_group": "yv-otobus",
+      "document": "ornek_rapor.md"
+    },
+    "yv-agac": {
+      "split": "legacy_regression",
+      "fact_group": "yv-agac",
+      "document": "ornek_rapor.md"
+    },
+    "yv-geri-donusum": {
+      "split": "legacy_regression",
+      "fact_group": "yv-geri-donusum",
+      "document": "ornek_rapor.md"
+    },
+    "yv-kompost": {
+      "split": "legacy_regression",
+      "fact_group": "yv-kompost",
+      "document": "ornek_rapor.md"
+    },
+    "yv-butce-gerceklesme": {
+      "split": "legacy_regression",
+      "fact_group": "yv-butce-gerceklesme",
+      "document": "ornek_rapor.md"
+    },
+    "mk-sayac": {
+      "split": "legacy_regression",
+      "fact_group": "mk-sayac",
+      "document": "mavi_korfez_2025.md"
+    },
+    "mk-tramvay-uzunluk": {
+      "split": "legacy_regression",
+      "fact_group": "mk-tramvay-uzunluk",
+      "document": "mavi_korfez_2025.md"
+    },
+    "mk-tramvay-yolcu": {
+      "split": "legacy_regression",
+      "fact_group": "mk-tramvay-yolcu",
+      "document": "mavi_korfez_2025.md"
+    },
+    "mk-bisiklet": {
+      "split": "legacy_regression",
+      "fact_group": "mk-bisiklet",
+      "document": "mavi_korfez_2025.md"
+    },
+    "mk-yesil-alan": {
+      "split": "legacy_regression",
+      "fact_group": "mk-yesil-alan",
+      "document": "mavi_korfez_2025.md"
+    },
+    "mk-gonullu": {
+      "split": "legacy_regression",
+      "fact_group": "mk-gonullu",
+      "document": "mavi_korfez_2025.md"
+    },
+    "mk-butce-kalem": {
+      "split": "legacy_regression",
+      "fact_group": "mk-butce-kalem",
+      "document": "mavi_korfez_2025.md"
+    },
+    "mk-aritma": {
+      "split": "legacy_regression",
+      "fact_group": "mk-aritma",
+      "document": "mavi_korfez_2025.md"
+    },
+    "iz-yillik-az-kidem": {
+      "split": "legacy_regression",
+      "fact_group": "iz-yillik-az-kidem",
+      "document": "izin_yonergesi.md"
+    },
+    "iz-yillik-cok-kidem": {
+      "split": "legacy_regression",
+      "fact_group": "iz-yillik-cok-kidem",
+      "document": "izin_yonergesi.md"
+    },
+    "iz-talep-suresi": {
+      "split": "legacy_regression",
+      "fact_group": "iz-talep-suresi",
+      "document": "izin_yonergesi.md"
+    },
+    "iz-babalik": {
+      "split": "legacy_regression",
+      "fact_group": "iz-babalik",
+      "document": "izin_yonergesi.md"
+    },
+    "iz-evlilik": {
+      "split": "legacy_regression",
+      "fact_group": "iz-evlilik",
+      "document": "izin_yonergesi.md"
+    },
+    "iz-uzaktan": {
+      "split": "legacy_regression",
+      "fact_group": "iz-uzaktan",
+      "document": "izin_yonergesi.md"
+    },
+    "iz-cekirdek-saat": {
+      "split": "legacy_regression",
+      "fact_group": "iz-cekirdek-saat",
+      "document": "izin_yonergesi.md"
+    },
+    "iz-onay-suresi": {
+      "split": "legacy_regression",
+      "fact_group": "iz-onay-suresi",
+      "document": "izin_yonergesi.md"
+    },
+    "en-otobus": {
+      "split": "legacy_regression",
+      "fact_group": "yv-otobus",
+      "document": "ornek_rapor.md"
+    },
+    "en-babalik": {
+      "split": "legacy_regression",
+      "fact_group": "iz-babalik",
+      "document": "izin_yonergesi.md"
+    },
+    "en-tramvay": {
+      "split": "legacy_regression",
+      "fact_group": "mk-tramvay-uzunluk",
+      "document": "mavi_korfez_2025.md"
+    },
+    "tuzak-baskan": {
+      "split": "legacy_regression",
+      "fact_group": "tuzak-baskan",
+      "document": null
+    },
+    "tuzak-nufus": {
+      "split": "legacy_regression",
+      "fact_group": "tuzak-nufus",
+      "document": null
+    },
+    "tuzak-yv-tramvay": {
+      "split": "legacy_regression",
+      "fact_group": "tuzak-yv-tramvay",
+      "document": null
+    },
+    "tuzak-mk-otobus": {
+      "split": "legacy_regression",
+      "fact_group": "tuzak-mk-otobus",
+      "document": null
+    },
+    "tuzak-izin-devri": {
+      "split": "legacy_regression",
+      "fact_group": "tuzak-izin-devri",
+      "document": null
+    },
+    "tuzak-ucretsiz-izin": {
+      "split": "legacy_regression",
+      "fact_group": "tuzak-ucretsiz-izin",
+      "document": null
+    },
+    "tuzak-2024-butce": {
+      "split": "legacy_regression",
+      "fact_group": "tuzak-2024-butce",
+      "document": null
+    },
+    "tuzak-mk-kredi": {
+      "split": "legacy_regression",
+      "fact_group": "tuzak-mk-kredi",
+      "document": null
+    },
+    "konu-disi-baskent": {
+      "split": "legacy_regression",
+      "fact_group": "konu-disi-baskent",
+      "document": null
+    },
+    "konu-disi-python": {
+      "split": "legacy_regression",
+      "fact_group": "konu-disi-python",
+      "document": null
+    },
+    "konu-disi-futbol": {
+      "split": "legacy_regression",
+      "fact_group": "konu-disi-futbol",
+      "document": null
+    },
+    "konu-disi-kuantum": {
+      "split": "legacy_regression",
+      "fact_group": "konu-disi-kuantum",
+      "document": null
+    },
+    "konu-disi-pizza": {
+      "split": "legacy_regression",
+      "fact_group": "konu-disi-pizza",
+      "document": null
+    },
+    "konu-disi-hava": {
+      "split": "legacy_regression",
+      "fact_group": "konu-disi-hava",
+      "document": null
+    }
+  },
+  "calibration": [],
+  "holdout": [],
+  "quality_promotion_gate": "not_evaluated",
+  "qrel_origin": "Legacy evidence anchor expanded to exact LF-normalized source paragraph; source integrity is not independent semantic gold review",
+  "threshold_objective": {
+    "name": "balanced_category_retention_rejection",
+    "constraints": {
+      "answerable_kept": 1,
+      "english_kept": 1
+    }
+  }
+}
