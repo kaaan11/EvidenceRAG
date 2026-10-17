@@ -24,8 +24,8 @@ def test_generate_answer_returns_only_new_text_deterministically():
     assert len(calls) == 1
     called_messages, kwargs = calls[0]
     assert called_messages == messages
-    assert kwargs["generation_config"].max_new_tokens == 32
-    assert kwargs["generation_config"].do_sample is False
+    assert kwargs["max_new_tokens"] == 32
+    assert kwargs["do_sample"] is False
     assert kwargs["return_full_text"] is False
 
 
@@ -118,3 +118,37 @@ def test_generator_and_tokenizer_receive_same_observed_revision(monkeypatch):
     assert module._create_text_generator(record["repository"],record["revision"]) is generator
     assert calls[0]==("tokenizer",record["repository"],{"revision":record["revision"]})
     assert calls[1][2]["revision"]==record["revision"] and calls[1][2]["tokenizer"] is tokenizer
+
+
+def test_production_generation_keeps_real_adapter_config_arguments(monkeypatch):
+    import sys
+    import app.rag.generation as module
+    calls=[]
+    class Config:
+        def __init__(self,**kwargs):self.__dict__.update(kwargs)
+    def generator(*args,**kwargs):calls.append(kwargs);return [{'generated_text':'answer'}]
+    attach_tokenizer(generator)
+    monkeypatch.setattr(module,'get_text_generator',lambda *a,**k:generator)
+    monkeypatch.setitem(sys.modules,'transformers',SimpleNamespace(GenerationConfig=Config))
+    assert module.generate_answer([],max_new_tokens=17)=='answer'
+    assert calls[0]['generation_config'].max_new_tokens==17
+    assert calls[0]['generation_config'].do_sample is False
+    assert calls[0]['return_full_text'] is False and calls[0]['clean_up_tokenization_spaces'] is False
+
+
+def test_explicit_fake_generator_never_imports_transformers(monkeypatch):
+    import sys
+    monkeypatch.setitem(sys.modules,'transformers',None)
+    def generator(*args,**kwargs):return [{'generated_text':'fake explicit answer'}]
+    assert generate_answer([],text_generator=attach_tokenizer(generator))=='fake explicit answer'
+
+
+def test_production_missing_transformers_is_not_a_fake_success(monkeypatch):
+    import sys
+    import app.rag.generation as module
+    calls=[]
+    def generator(*args,**kwargs):calls.append(args);return [{'generated_text':'must not run'}]
+    monkeypatch.setattr(module,'get_text_generator',lambda *a,**k:attach_tokenizer(generator))
+    monkeypatch.setitem(sys.modules,'transformers',None)
+    with pytest.raises(LLMGenerationError,match='transformers'):module.generate_answer([])
+    assert calls==[]

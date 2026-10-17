@@ -72,17 +72,21 @@ def generate_answer(
 
 def _generate_answer(messages, model_name, max_new_tokens, text_generator, revision):
     try:
-        from transformers import GenerationConfig
-
-        generator = text_generator or get_text_generator(model_name,revision=revision)
+        generator = text_generator if text_generator is not None else get_text_generator(model_name,revision=revision)
         tokenizer = getattr(generator, "tokenizer", None)
         if tokenizer is None:
             raise LLMGenerationError("Tokenizer is required for the complete prompt budget")
         with _inference_lock:
             validate_prompt_budget(messages, tokenizer, _context_window(generator), max_new_tokens)
+            if text_generator is None:
+                from transformers import GenerationConfig
+                options={"generation_config":GenerationConfig(max_new_tokens=max_new_tokens,do_sample=False)}
+            else:
+                # Explicit injected callable protocol uses primitives, no Transformers dependency.
+                options={"max_new_tokens":max_new_tokens,"do_sample":False}
             output = invoke_generator(generator,
                 messages,
-                generation_config=GenerationConfig(max_new_tokens=max_new_tokens, do_sample=False),
+                **options,
                 return_full_text=False,
                 clean_up_tokenization_spaces=False,
             )
