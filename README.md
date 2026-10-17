@@ -233,6 +233,29 @@ Bu uyarılar cevabı engellemez veya yeniden üretmez. `cited=true` yalnız o ka
 
 ## Testler
 
+### Son entegrasyon ve açık gate'ler
+
+Yerel güvenilirlik kontrolleri gerçek FAISS/framework/dosya/proses kilidi ile ve açık fake modellerle çalıştırılır. TXT/MD/küçük PDF upload → list → ask/kaynak/uyarı → duplicate → tek belge delete → restart akışı; erişim/limit/busy/loader/token/precommit ve lease/iptal regresyonları bu lane'dedir. Ölçülmemiş gerçek-model entegrasyonu ve kalite/kapasite gate'i açık kalır; bütün sistem için genel production-ready iddiası yoktur.
+
+Sınırlı yerel kapasite fixture'ı:
+
+```powershell
+python experiments/capacity_check.py --profile experiments/capacity_profiles/local_fixture.json --output capacity-fixture.json
+```
+
+Profil 6 istek, 1 aktif/2 bekleyen iş, 25 ms açık fake iş, 10 saniyelik iş penceresi, 128 bayt upload, 512 MiB proses peak RSS ve 1 MiB sahip olunan index dosyası bütçesi kullanır. Uzak sunucu hedeflemez; gerçek TCP/ağ gecikmesini, soğuk model yüklemesini veya LLM throughput'unu ölçmez. RSS işletim sisteminin proses peak working-set sayacıdır; disk değeri kontrolün kendi index dosyalarıdır. Bütçe kontrolü hard OS memory/CPU termination garantisi değildir. Küçük örneklemde p95 null bırakılır. Parametreler, örnek sayısı ve donanım çıktı JSON'unda yer alır; fake süreler gerçek model gecikmesi sayılmaz.
+
+Cache-only gerçek-model smoke ayrı ve açık opt-in'dir:
+
+```powershell
+$env:EVIDENCERAG_REAL_MODEL_TESTS='1'
+python -m pytest -q -p no:cacheprovider -m real_model tests/test_end_to_end.py
+```
+
+Bu komut iki pinli immutable modelin mevcut cache'ini gerektirir; test offline kalır ve cache yoksa başarı taklidi yapmaz. Bu teslimde ağırlık indirilmedi, gerçek-model smoke/holdout kalite/cold-start/model-RSS çalıştırılmadı. Test için cache doldurma veya yeni kapasite bütçesi ayrıca kararlaştırılmalıdır. Varsayılan modeller ve legacy chunker korunur; structured yalnız opt-in'dir.
+
+Geri dönüşte servis durdurulur ve kod/ayar/index şeması birlikte seçilir. T06 öncesi v1 NPZ, eski T05 kodu ve eski imza ayarlarıyla kendi değişmemiş yedek dizininden açılır; yeni v2 dosya eski koda zorlanmaz. Structured v2'den legacy'ye dönüş de eski legacy index dizinine açık geçiştir. Özgün belge yoksa kayıpsız reindex varsayılmaz; yedek ve yeni dizinler korunur, kullanıcı dosyası silinmez. Uygulanmamış PR'lar merge edilmeden reddedilebilir; PR/branch kapatmak kullanıcı verisini geri almak için otomatik dosya silme gerekçesi değildir.
+
 ```bash
 python -m pip install --require-hashes --only-binary=:all: -r requirements-dev.lock
 python -m pytest -q -p no:cacheprovider -m "model_free and not real_model"
