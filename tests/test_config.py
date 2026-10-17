@@ -64,3 +64,21 @@ def test_invalid_budget_prevents_app_startup(monkeypatch):
                             capture_output=True, text=True, timeout=20)
     assert result.returncode != 0
     assert "max_text_chars must be a positive integer" in result.stderr
+
+
+@pytest.mark.parametrize("setting", ["max_active_heavy_jobs","max_waiting_heavy_jobs","ask_queue_capacity","index_queue_capacity","model_queue_capacity","heavy_wait_seconds"])
+def test_runtime_settings_are_finite_positive(setting):
+    with pytest.raises(ValueError,match=setting): Settings(**{setting:0})
+
+
+def test_preload_boolean_is_explicit(monkeypatch):
+    monkeypatch.setenv("PRELOAD_MODELS","false")
+    assert Settings().preload_models is False
+    monkeypatch.setenv("PRELOAD_MODELS","true")
+    assert Settings().preload_models is True
+    monkeypatch.setenv("PRELOAD_MODELS","maybe")
+    with pytest.raises(ValueError,match="PRELOAD_MODELS"): Settings()
+
+
+def test_torch_threads_reject_nonpositive_setting():
+    with pytest.raises(ValueError,match="TORCH_NUM_THREADS"): Settings(torch_num_threads=0)

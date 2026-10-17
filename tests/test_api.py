@@ -26,7 +26,8 @@ def client(monkeypatch):
         generation_function=fake_generate,
     )
     monkeypatch.setattr(main, "rag_pipeline", pipeline)
-    return TestClient(main.app, base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
+    with TestClient(main.app, base_url="http://127.0.0.1", client=("127.0.0.1", 50000)) as test_client:
+        yield test_client
 
 
 def test_upload_then_ask_returns_answer_with_sources(client):
@@ -36,7 +37,7 @@ def test_upload_then_ask_returns_answer_with_sources(client):
     )
     assert upload.status_code == 200
     assert upload.json()["chunks_indexed"] == 1
-    assert client.get("/health").json() == {"status": "ok", "indexed_chunks": 1}
+    assert client.get("/health").json() == {"status": "ok", "indexed_chunks": 1, "model_readiness": "lazy"}
 
     answer = client.post("/ask", json={"question": "Etkinlik ne zaman oldu?"})
     assert answer.status_code == 200
@@ -317,7 +318,7 @@ def test_cancel_before_worker_starts_cleans_upload_resources(client, monkeypatch
         raise asyncio.CancelledError()
     monkeypatch.setattr(main.tempfile, "NamedTemporaryFile", temporary)
     monkeypatch.setattr(parser_module, "SpooledTemporaryFile", spool)
-    monkeypatch.setattr(main, "run_in_threadpool", cancelled)
+    monkeypatch.setattr(main.rag_pipeline.runtime, "run_async", cancelled)
     with pytest.raises(asyncio.CancelledError):
         asgi_post([multipart_body()], [CONTENT_TYPE])
     assert paths and all(not main.Path(p).exists() for p in paths)

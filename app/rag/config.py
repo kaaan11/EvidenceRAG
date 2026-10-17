@@ -34,6 +34,13 @@ def _float_env(name, default):
     return read
 
 
+def _bool_env(name):
+    value = os.getenv(name, "false").lower()
+    if value not in {"true", "false", "1", "0"}:
+        raise ValueError(f"{name} must be true/false or 1/0")
+    return value in {"true", "1"}
+
+
 # Environment variables are read when Settings() is created, not when this module is
 # imported, so values loaded from a .env file at startup are picked up.
 @dataclass(frozen=True)
@@ -68,6 +75,14 @@ class Settings:
     max_document_chunks: int = field(default_factory=_int_env("MAX_DOCUMENT_CHUNKS", 2000))
     max_store_chunks: int = field(default_factory=_int_env("MAX_STORE_CHUNKS", 20000))
     max_store_text_bytes: int = field(default_factory=_int_env("MAX_STORE_TEXT_BYTES", 64 * 1024 * 1024))
+    max_active_heavy_jobs: int = field(default_factory=_int_env("MAX_ACTIVE_HEAVY_JOBS", 1))
+    max_waiting_heavy_jobs: int = field(default_factory=_int_env("MAX_WAITING_HEAVY_JOBS", 2))
+    ask_queue_capacity: int = field(default_factory=_int_env("ASK_QUEUE_CAPACITY", 2))
+    index_queue_capacity: int = field(default_factory=_int_env("INDEX_QUEUE_CAPACITY", 2))
+    model_queue_capacity: int = field(default_factory=_int_env("MODEL_QUEUE_CAPACITY", 2))
+    heavy_wait_seconds: int = field(default_factory=_int_env("HEAVY_WAIT_SECONDS", 30))
+    preload_models: bool = field(default_factory=lambda: _bool_env("PRELOAD_MODELS"))
+    torch_num_threads: int | None = field(default_factory=_int_env("TORCH_NUM_THREADS", None))
     # Relative paths are resolved against the project root.
     index_dir: str = field(default_factory=_str_env("INDEX_DIR", "data/index"))
 
@@ -83,12 +98,16 @@ class Settings:
             "max_http_body_bytes", "max_json_body_bytes", "max_multipart_header_bytes",
             "max_filename_bytes", "max_question_chars", "max_pdf_pages", "max_text_chars",
             "max_document_chunks", "max_store_chunks", "max_store_text_bytes",
+            "max_active_heavy_jobs", "max_waiting_heavy_jobs", "ask_queue_capacity",
+            "index_queue_capacity", "model_queue_capacity", "heavy_wait_seconds",
         ):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{name} must be a positive integer")
         if isinstance(self.chunk_overlap, bool) or not isinstance(self.chunk_overlap, int) or not 0 <= self.chunk_overlap < self.chunk_size:
             raise ValueError("chunk_overlap must be >= 0 and less than chunk_size")
+        if self.torch_num_threads is not None and (not isinstance(self.torch_num_threads, int) or self.torch_num_threads <= 0):
+            raise ValueError("TORCH_NUM_THREADS must be a positive integer when set")
 
     def embedding_signature(self):
         """Settings that determine the stored vectors; changing any of them needs a re-index."""

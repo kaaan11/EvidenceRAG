@@ -1,11 +1,11 @@
 import logging
 import os
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
@@ -20,6 +20,7 @@ from app.rag.document_loader import DocumentError
 from app.rag.generation import LLMGenerationError
 from app.rag.pipeline import RAGPipeline
 from app.rag.vector_store import DuplicateDocumentError, VectorStore
+from app.rag.runtime import BusyError
 
 
 logging.basicConfig(level=logging.INFO)
@@ -37,7 +38,22 @@ rag_pipeline = RAGPipeline(
     ),
 )
 
-app = FastAPI(title="EvidenceRAG")
+@asynccontextmanager
+async def lifespan(app):
+    app.state.model_readiness = "lazy"
+    if rag_pipeline.settings.preload_models:
+        app.state.model_readiness = "loading"
+        try:
+            await rag_pipeline.runtime.run_async("load", rag_pipeline.preload_models)
+            app.state.model_readiness = "ready"
+        except Exception as exc:
+            app.state.model_readiness = "failed"
+            raise RuntimeError("Explicit model preload failed") from exc
+    yield
+
+
+app = FastAPI(title="EvidenceRAG", lifespan=lifespan)
+app.state.model_readiness = "lazy"
 app.add_middleware(BodyLimitMiddleware, settings=lambda: rag_pipeline.settings)
 app.add_middleware(LocalAccessMiddleware)  # Outermost: reject before body parsing/spooling.
 static_directory = project_directory / "static"
@@ -65,6 +81,7 @@ def health_check():
     return {
         "status": "ok",
         "indexed_chunks": len(rag_pipeline.vector_store.chunks),
+        "model_readiness": app.state.model_readiness,
     }
 
 
@@ -100,7 +117,9 @@ async def _index_upload(file):
             temporary_path = temporary_file.name
             temporary_file.write(content)
         # Embedding is CPU-bound; run it off the event loop so other requests keep being served.
-        return await run_in_threadpool(rag_pipeline.index_file, temporary_path, filename=filename)
+        return await rag_pipeline.runtime.run_async("index", rag_pipeline.index_file, temporary_path, filename=filename)
+    except BusyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={"Retry-After": "1"}) from exc
     except InputLimitError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except DuplicateDocumentError as exc:
@@ -130,9 +149,11 @@ def delete_document(document_id: str):
 
 
 @app.post("/ask")
-def ask_question(request: QuestionRequest):
+async def ask_question(request: QuestionRequest):
     try:
-        return rag_pipeline.ask(request.question)
+        return await rag_pipeline.runtime.run_async("ask", rag_pipeline.ask, request.question)
+    except BusyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={"Retry-After": "1"}) from exc
     except InputLimitError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except ValueError as exc:
