@@ -1,0 +1,13 @@
+{
+  "schema_version": 2,
+  "variable": "chunking",
+  "hypothesis": "Preserving source lines/headings and word-aligned overlap may improve evidence readability and coverage within the same selected context character budget.",
+  "strategies": [{"chunker_strategy":"legacy_character","ingestion_version":1},{"chunker_strategy":"structured_v2","ingestion_version":2}],
+  "invariants": ["dataset/corpus/source qrels and split", "embedding/LLM revision and prefixes", "prompt", "top_k", "threshold", "max_new_tokens", "context_budget_chars"],
+  "context_budget_chars": 16000,
+  "chunk_size": 800,
+  "chunk_overlap": 100,
+  "quality_promotion_gate": "not_evaluated",
+  "default_decision": "legacy default retained; structured opt-in",
+  "evidence_policy": "Fixture/native FAISS/fake embeddings validate mechanics only. Real model costs, tokenizer counts, RSS/quality require a separately budgeted run. Capacity/limit rejection and coverage failures stay in primary denominators."
+}

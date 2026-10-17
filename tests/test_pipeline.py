@@ -14,6 +14,31 @@ def fake_embed(texts, model_name):
     return np.array([[1.0, 0.0] for _ in texts], dtype="float32")
 
 
+@pytest.mark.parametrize('budget',[{'max_document_chunks':1},{'max_text_chars':2}])
+def test_structured_limit_rejection_has_no_embedding_or_partial_store(tmp_path,budget):
+    path=tmp_path/'structure.md';path.write_text('alpha bravo charlie delta echo',encoding='utf-8')
+    calls=[]
+    def embed(*args):calls.append(args);return [[1.,0.]]
+    pipeline=RAGPipeline(settings=Settings(chunker_strategy='structured_v2',ingestion_version=2,chunk_size=8,chunk_overlap=0,**budget),embedding_function=embed)
+    with pytest.raises(InputLimitError):pipeline.index_file(path)
+    assert calls==[] and pipeline.vector_store.is_empty and pipeline.list_documents()==[]
+
+
+def test_structured_embedding_uses_display_span_and_sources_expose_provenance(tmp_path):
+    text='# Başlık\n\nTablo | Tutar\n2025 | 5.800\n\n- İlk öğe\n- İkinci öğe\n'
+    path=tmp_path/'structure.md';path.write_text(text,encoding='utf-8');calls=[]
+    def embed(texts,name):calls.append(list(texts));return np.array([[1.,0.] for _ in texts],dtype='float32')
+    pipeline=RAGPipeline(settings=Settings(chunker_strategy='structured_v2',ingestion_version=2,relevance_threshold=.1),
+        embedding_function=embed,generation_function=lambda *a,**k:'Cevap [Kanıt 1]')
+    pipeline.index_file(path)
+    assert calls[0]==[pipeline.settings.embedding_passage_prefix+c['text'] for c in pipeline.vector_store.chunks]
+    answer=pipeline.ask('Tutar?')
+    for source in answer['sources']:
+        m=source['provenance']
+        assert text[m['char_start']:m['char_end']]==source['text']
+        assert m['strategy']=='structured_v2' and m['heading_path']==['Başlık']
+
+
 def fake_generate(messages, model_name, max_new_tokens):
     assert "Only answer using the supplied evidence" in messages[0]["content"]
     assert "The event happened in 2024." in messages[1]["content"]

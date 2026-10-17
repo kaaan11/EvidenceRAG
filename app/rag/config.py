@@ -127,8 +127,10 @@ class Settings:
                 object.__setattr__(self,revision_field,revision)
             if not re.fullmatch(r"[0-9a-f]{40}",revision):
                 raise ValueError(f"{revision_field} must be an immutable 40-character commit SHA")
-        if self.chunker_strategy != "legacy_character":
+        if self.chunker_strategy not in {"legacy_character","structured_v2"}:
             raise ValueError("Unsupported CHUNKER_STRATEGY")
+        if self.chunker_strategy=="structured_v2" and self.ingestion_version!=2:
+            raise ValueError("structured_v2 requires INGESTION_VERSION=2 and a separate rebuilt index")
         if isinstance(self.max_upload_mb, bool) or not isinstance(self.max_upload_mb, int) or self.max_upload_mb <= 0:
             raise ValueError("max_upload_mb must be a positive integer")
         if self.max_upload_bytes is None:
