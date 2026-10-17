@@ -10,6 +10,7 @@ from .generation import generate_answer
 from .grounding import verify_answer
 from .prompt import NO_EVIDENCE_MARKER, build_messages
 from .retrieval import retrieve
+from .runtime import get_runtime
 from .vector_store import DuplicateDocumentError, VectorStore
 
 
@@ -25,10 +26,12 @@ class RAGPipeline:
         embedding_function=embed_texts,
         generation_function=generate_answer,
         vector_store=None,
+        runtime=None,
     ):
         self.settings = settings or Settings()
         self.embedding_function = embedding_function
         self.generation_function = generation_function
+        self.runtime = runtime or get_runtime()
         self.vector_store = vector_store or VectorStore(
             max_chunks=self.settings.max_store_chunks,
             max_text_bytes=self.settings.max_store_text_bytes,
@@ -37,6 +40,9 @@ class RAGPipeline:
     def index_file(self, path, filename=None, source=None):
         if Path(path).stat().st_size > self.settings.max_upload_bytes:
             raise InputLimitError(f"File exceeds {self.settings.max_upload_bytes} bytes")
+        return self.runtime.run_sync("index", self._index_file, path, filename, source)
+
+    def _index_file(self, path, filename=None, source=None):
         filename = filename or Path(path).name
         sha256 = _file_sha256(path)
         # Checked before embedding so re-uploads don't pay for it; the store checks
@@ -94,6 +100,9 @@ class RAGPipeline:
     def ask(self, question):
         if len(question) > self.settings.max_question_chars:
             raise InputLimitError(f"Question exceeds {self.settings.max_question_chars} characters")
+        return self.runtime.run_sync("ask", self._ask, question)
+
+    def _ask(self, question):
         evidence = retrieve(
             question,
             self.vector_store,
@@ -123,6 +132,12 @@ class RAGPipeline:
             "sources": _sources_from(evidence, verification["citations"]),
             "verification": verification,
         }
+
+    def preload_models(self):
+        from .embedding import get_embedding_model
+        from .generation import get_text_generator
+        get_embedding_model(self.settings.embedding_model_name)
+        get_text_generator(self.settings.llm_model_name)
 
 
 def _insufficient_evidence():

@@ -88,6 +88,20 @@ uvicorn main:app --host 127.0.0.1 --no-proxy-headers --reload
 
 Sunucu başladıktan sonra web arayüzünü `http://127.0.0.1:8000/` adresinden, Swagger API ekranını ise `http://127.0.0.1:8000/docs` adresinden açabilirsiniz. Web arayüzü doküman yükleme, soru sorma, cevap gösterme ve kaynakları okunabilir kartlar halinde listeleme işlemlerini içerir.
 
+### Ağır model işleri ve readiness
+
+LLM generation ve embedding inference ayrıca kendi model-kullanım mutex'ini çağrı gerçekten dönene kadar tutar; global kapasiteyi yükseltmek aynı adapter nesnesinin eşzamanlı kullanımına izin vermez.
+
+`MAX_ACTIVE_HEAVY_JOBS=1` generation, query/index embedding ve cold loader için ortak proses-içi kapasitedir. Ask/index pipeline işleri bu iznin sahibidir; alt çağrılar yeniden izin beklemez. Doğrudan loader/embedding/generation çağrıları da aynı sınırı kullanır. Kilit sırası kapasite → loader cache → kısa store işlemleridir; store kilidini tutarak kapasite beklenmez.
+
+Bekleyen toplam iş `MAX_WAITING_HEAVY_JOBS=2` ile sınırlıdır. Global FIFO içinde ask/index/diğer model işi sayıları ayrıca `ASK_QUEUE_CAPACITY=2`, `INDEX_QUEUE_CAPACITY=2`, `MODEL_QUEUE_CAPACITY=2` ile sınırlandırılır. `HEAVY_WAIT_SECONDS=30` yalnız kuyruk bekleme süresidir; dolu/kapanan kuyruk veya süresi dolan bekleme `503`, `Retry-After: 1` ve açıklayıcı `detail` verir. Async admission ortak threadpool'u bloke etmez; native işler ayrı, kapasite kadar worker'ı olan executor'da çalışır. Health/belge listesi ağır kuyruğa girmez.
+
+İstemci iptali kuyruktaysa iş çıkarılır. İş başladıysa thread gerçekten bitene kadar hem global izin hem isteğe ait upload dosyaları korunur; iptal bu bekleyişten sonra bildirilir. Hata izin sızıntısı bırakmaz. Thread için sert sonlandırma/gerçek inference timeout'u yoktur; takılan native iş proses sonlanana dek sürebilir. Bu sınırlar RSS/p95 veya gösterilmemiş KV-cache arızalarının giderildiği garantisi değildir.
+
+Default yükleme lazy'dir: startup model indirmez; `/health` içindeki `model_readiness: lazy` modelin yüklü olduğunu söylemez. `PRELOAD_MODELS=true` açık opt-in'dir; lifecycle loading/ready/failed durumunu izler, preload hatası startup'ı durdurur. Cache aynı model+revision anahtarı için tek başarılı kurucu yayınlar; ilk hata cache'e yazılmaz ve tekrar denenebilir. Revision kimlikleri ayrı model kimliği görevinin konusudur; burada SHA uydurulmaz.
+
+Gerçek generation öncesinde tokenizer'ın `apply_chat_template` çıktısı bütün system/soru/kanıt tokenlarını ve `MAX_NEW_TOKENS` cevap rezervini kapsayarak gerçek model/tokenizer context sınırıyla karşılaştırılır. Aşım `InputLimitError` / HTTP `413` verir; soru/kanıt sessiz kesilmez. Query embedding bu kontrolden önce yapılmış olabilir. Char limiti token limiti değildir. İsteğe bağlı pozitif `TORCH_NUM_THREADS` ilk model yüklemesinden önce bir kez uygulanır; belirtilmezse host env/default thread ayarları değiştirilmez.
+
 ### Yerel erişim sınırı
 
 `ACCESS_PROFILE=local` varsayılan ve desteklenen tek profildir. `shared`, `public` veya başka bir değer başlangıçta hata verir; bir API key eklemek bunları etkinleştirmez. Public/LAN yayın, reverse proxy ve çok kullanıcı/tenant izolasyonu bu sürümde desteklenmez. Aynı makinedeki diğer proseslere karşı kullanıcı kimlik doğrulaması sağlanmaz; bütün yerel istemciler aynı store'u kullanır.
