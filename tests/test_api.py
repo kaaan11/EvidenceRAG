@@ -94,46 +94,6 @@ def test_uploading_the_same_content_twice_is_rejected(client):
     assert len(client.get("/documents").json()["documents"]) == 1
 
 
-<<<<<<< HEAD
-@pytest.mark.parametrize("label", ["Kanıt", "Kanit", "Evidence"])
-def test_ask_round_trips_number_warnings_without_blocking(client, monkeypatch, label):
-    upload(client, text="Etkinlik 2024'te gerçekleşti.")
-    raw = f"  2025 ve 2026. [{label} 1] [Evidence 4]  "
-    monkeypatch.setattr(main.rag_pipeline, "generation_function", lambda *args, **kwargs: raw)
-    response = client.post("/ask", json={"question": "2025 yılında ne oldu?"})
-    assert response.status_code == 200
-    body = response.json()
-    assert set(body) == {"answer", "sources", "verification"}
-    assert body["answer"] == raw
-    assert body["verification"] == {
-        "citations": [1], "invalid_citations": [4],
-        "unsupported_numbers": ["2026"], "question_only_numbers": ["2025"],
-    }
-    assert set(body["sources"][0]) == {
-        "evidence_number", "cited", "text", "filename", "document_id",
-        "page", "source", "chunk_id", "score",
-    }
-    assert body["sources"][0]["evidence_number"] == 1
-    assert body["sources"][0]["cited"] is True
-
-
-@pytest.mark.parametrize("raw,refused", [
-    (" \n no_evidence \t", True),
-    ("Ret işareti NO_EVIDENCE olarak yazılır. [Kanıt 1]", False),
-])
-def test_ask_marker_contract(client, monkeypatch, raw, refused):
-    upload(client)
-    monkeypatch.setattr(main.rag_pipeline, "generation_function", lambda *args, **kwargs: raw)
-    response = client.post("/ask", json={"question": "İşaret nedir?"})
-    assert response.status_code == 200
-    body = response.json()
-    if refused:
-        assert body["sources"] == []
-        assert body["verification"] is None
-    else:
-        assert body["answer"] == raw
-        assert body["verification"]["question_only_numbers"] == []
-=======
 def multipart_body(content=b"abc", filename="a.txt", extra_headers=b""):
     return (b'--edge\r\nContent-Disposition: form-data; name="file"; filename="'
             + filename.encode("utf-8") + b'"\r\n' + extra_headers + b'\r\n'
@@ -401,4 +361,43 @@ def test_temp_file_write_failure_does_not_leave_upload_file(client, monkeypatch,
     assert response.status_code == 500  # An injected I/O error, not a limit rejection.
     assert paths and all(not main.Path(p).exists() for p in paths)
     assert main.rag_pipeline.list_documents() == []
->>>>>>> 29e1297 (Bound T02 input, document and store budgets)
+
+
+@pytest.mark.parametrize("label", ["Kanıt", "Kanit", "Evidence"])
+def test_ask_round_trips_number_warnings_without_blocking(client, monkeypatch, label):
+    upload(client, text="Etkinlik 2024'te gerçekleşti.")
+    raw = f"  2025 ve 2026. [{label} 1] [Evidence 4]  "
+    monkeypatch.setattr(main.rag_pipeline, "generation_function", lambda *args, **kwargs: raw)
+    response = client.post("/ask", json={"question": "2025 yılında ne oldu?"})
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"answer", "sources", "verification"}
+    assert body["answer"] == raw
+    assert body["verification"] == {
+        "citations": [1], "invalid_citations": [4],
+        "unsupported_numbers": ["2026"], "question_only_numbers": ["2025"],
+    }
+    assert set(body["sources"][0]) == {
+        "evidence_number", "cited", "text", "filename", "document_id",
+        "page", "source", "chunk_id", "score",
+    }
+    assert body["sources"][0]["evidence_number"] == 1
+    assert body["sources"][0]["cited"] is True
+
+
+@pytest.mark.parametrize("raw,refused", [
+    (" \n no_evidence \t", True),
+    ("Ret işareti NO_EVIDENCE olarak yazılır. [Kanıt 1]", False),
+])
+def test_ask_marker_contract(client, monkeypatch, raw, refused):
+    upload(client)
+    monkeypatch.setattr(main.rag_pipeline, "generation_function", lambda *args, **kwargs: raw)
+    response = client.post("/ask", json={"question": "İşaret nedir?"})
+    assert response.status_code == 200
+    body = response.json()
+    if refused:
+        assert body["sources"] == []
+        assert body["verification"] is None
+    else:
+        assert body["answer"] == raw
+        assert body["verification"]["question_only_numbers"] == []
