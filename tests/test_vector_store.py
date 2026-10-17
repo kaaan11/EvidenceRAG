@@ -156,3 +156,86 @@ def test_direct_add_also_obeys_quota():
     with pytest.raises(InputLimitError):
         store.add(chunks, vectors)
     assert store.is_empty
+
+
+@pytest.mark.parametrize("operation", ["add","delete"])
+@pytest.mark.parametrize("fault", ["open","serialize","save","file_fsync","replace"])
+def test_precommit_fault_preserves_native_committed_state(tmp_path, monkeypatch, operation, fault):
+    import app.rag.vector_store as module
+    from app.rag.vector_store import StoreWriteError
+    path=tmp_path/"store.npz"
+    store=VectorStore(persist_path=path)
+    store.add_document(*make_document("a","a",[[1.0,0.0]]))
+    store.add_document(*make_document("b","b",[[0.0,1.0]]))
+    before=path.read_bytes(); docs=store.list_documents(); result=store.search([1.0,0.0]); operation_id=store.operation_id
+    def fail(*args,**kwargs): raise OSError("injected precommit failure")
+    with monkeypatch.context() as m:
+        target={"open":(module.tempfile,"NamedTemporaryFile"),"serialize":(module.json,"dumps"),
+                "save":(module.np,"savez"),"file_fsync":(module.os,"fsync"),"replace":(module.os,"replace")}[fault]
+        m.setattr(*target,fail)
+        with pytest.raises(StoreWriteError) as error:
+            if operation=="add": store.add_document(*make_document("c","c",[[1.0,1.0]]))
+            else: store.delete_document("a")
+        assert error.value.commit_status=="not_committed"
+    assert path.read_bytes()==before and store.operation_id==operation_id
+    for current in [store,VectorStore(persist_path=path)]:
+        assert current.list_documents()==docs and current.search([1.0,0.0])==result
+        assert current.find_document_by_hash("a") is not None
+        assert current.find_document_by_hash("c") is None
+    assert list(tmp_path.glob(".store.npz.*.tmp"))==[]
+    # Neither a duplicate trap nor a partially deleted document survives the error.
+    if operation=="add": store.add_document(*make_document("c","c",[[1.0,1.0]]))
+    else: assert store.delete_document("a")
+    assert VectorStore(persist_path=path).list_documents()==store.list_documents()
+
+
+@pytest.mark.parametrize("operation", ["add","delete"])
+def test_postreplace_sync_failure_is_visible_commit_not_rollback(tmp_path,monkeypatch,operation):
+    from app.rag.vector_store import StoreCommitUncertainError
+    path=tmp_path/"store.npz"; store=VectorStore(persist_path=path)
+    store.add_document(*make_document("a","a",[[1.0,0.0]]))
+    store.add_document(*make_document("b","b",[[0.0,1.0]]))
+    before=path.read_bytes()
+    def fail(): raise OSError("injected directory-sync failure")
+    monkeypatch.setattr(store,"_sync_directory",fail)
+    with pytest.raises(StoreCommitUncertainError) as error:
+        if operation=="add": store.add_document(*make_document("c","c",[[1.0,1.0]]))
+        else: store.delete_document("a")
+    assert error.value.commit_status=="durability_uncertain"
+    assert path.read_bytes()!=before
+    loaded=VectorStore(persist_path=path)
+    assert loaded.operation_id==store.operation_id==error.value.operation_id
+    assert loaded.list_documents()==store.list_documents()
+    assert loaded.search([1.0,0.0])==store.search([1.0,0.0])
+    assert len(store.documents)==(3 if operation=="add" else 1)
+    assert list(tmp_path.glob(".store.npz.*.tmp"))==[]
+
+
+def test_unique_candidate_temps_and_standalone_reload_with_lease(tmp_path,monkeypatch):
+    import app.rag.vector_store as module
+    from app.rag.storage_lease import WriterLease
+    path=tmp_path/"store.npz"; names=[]
+    original=module.tempfile.NamedTemporaryFile
+    def temporary(*args,**kwargs):
+        f=original(*args,**kwargs); names.append(f.name); return f
+    monkeypatch.setattr(module.tempfile,"NamedTemporaryFile",temporary)
+    store=VectorStore(persist_path=path)
+    lease=WriterLease(tmp_path).acquire()
+    try:
+        store.add_document(*make_document("a","a",[[1.0,0.0]]))
+        store.add_document(*make_document("b","b",[[0.0,1.0]]))
+        assert VectorStore(persist_path=path).list_documents()==store.list_documents()
+        assert store.delete_document("a")
+        memory=VectorStore(); memory.add_document(*make_document("x","x",[[1.0,0.0]]))
+        assert memory.delete_document("x")
+    finally: lease.release()
+    assert len(names)==len(set(names))==3
+    assert list(tmp_path.glob(".store.npz.*.tmp"))==[]
+
+
+def test_service_write_guard_blocks_before_live_mutation():
+    from app.rag.storage_lease import WriterLeaseError
+    def denied(): raise WriterLeaseError("not started")
+    store=VectorStore(write_guard=denied)
+    with pytest.raises(WriterLeaseError): store.add_document(*make_document("a","a",[[1.0,0.0]]))
+    assert store.index is None and store.documents=={} and store.chunks==[]

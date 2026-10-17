@@ -37,7 +37,9 @@ def test_upload_then_ask_returns_answer_with_sources(client):
     )
     assert upload.status_code == 200
     assert upload.json()["chunks_indexed"] == 1
-    assert client.get("/health").json() == {"status": "ok", "indexed_chunks": 1, "model_readiness": "lazy"}
+    health = client.get("/health").json()
+    assert {key: health[key] for key in ["status","indexed_chunks","model_readiness"]} == {"status": "ok", "indexed_chunks": 1, "model_readiness": "lazy"}
+    assert isinstance(health["store_operation_id"], str)
 
     answer = client.post("/ask", json={"question": "Etkinlik ne zaman oldu?"})
     assert answer.status_code == 200
@@ -411,3 +413,32 @@ def test_deleting_one_document_preserves_the_other(client):
     remaining = client.get("/documents").json()["documents"]
     assert [item["document_id"] for item in remaining] == [second]
     assert client.get("/health").json()["indexed_chunks"] == 1
+
+
+@pytest.mark.parametrize("after_commit", [False,True])
+def test_api_distinguishes_precommit_and_visible_durability_error(tmp_path,monkeypatch,after_commit):
+    from app.rag.vector_store import VectorStore
+    from app.rag.runtime import HeavyRuntime
+    import app.rag.vector_store as module
+    store=VectorStore(persist_path=tmp_path/"store.npz")
+    pipeline=RAGPipeline(settings=Settings(relevance_threshold=0.3),vector_store=store,
+                         embedding_function=fake_embed,generation_function=fake_generate,
+                         runtime=HeavyRuntime(wait_seconds=2))
+    monkeypatch.setattr(main,"rag_pipeline",pipeline)
+    with TestClient(main.app,base_url="http://127.0.0.1",client=("127.0.0.1",1)) as client:
+        assert upload(client,"first.txt","First 2024").status_code==200
+        def fail(*args,**kwargs): raise OSError("injected persistence failure")
+        with monkeypatch.context() as m:
+            if after_commit: m.setattr(store,"_sync_directory",fail)
+            else: m.setattr(module.np,"savez",fail)
+            result=upload(client,"second.txt","Second 2025")
+        assert result.status_code==500
+        body=result.json()
+        assert body["commit_status"]==("durability_uncertain" if after_commit else "not_committed")
+        assert body["operation_id"]
+        docs=client.get("/documents").json()["documents"]
+        assert len(docs)==(2 if after_commit else 1)
+        if after_commit:
+            assert client.get("/health").json()["store_operation_id"]==body["operation_id"]
+        else:
+            assert upload(client,"second.txt","Second 2025").status_code==200
