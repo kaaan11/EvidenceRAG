@@ -24,6 +24,7 @@ from app.rag.pipeline import RAGPipeline
 from app.rag.vector_store import DuplicateDocumentError, VectorStore, StoreWriteError
 from app.rag.runtime import BusyError
 from app.rag.storage_lease import WriterLease, WriterLeaseError, drain_service
+from app.rag.diagnostics import DiagnosticsMiddleware, mark_reason
 
 
 logging.basicConfig(level=logging.INFO)
@@ -91,6 +92,7 @@ app.state.model_readiness = "lazy"
 app.state.service_accepting = False
 app.add_middleware(BodyLimitMiddleware, settings=lambda: rag_pipeline.settings)
 app.add_middleware(LocalAccessMiddleware)  # Outermost: reject before body parsing/spooling.
+app.add_middleware(DiagnosticsMiddleware, pipeline=lambda: rag_pipeline)
 static_directory = project_directory / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -168,7 +170,7 @@ async def _index_upload(file):
     except (DocumentError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        logger.exception("Document indexing failed")
+        logger.error("Document indexing failed")
         raise HTTPException(status_code=500, detail="Document indexing failed") from exc
     finally:
         if temporary_path and os.path.exists(temporary_path):
@@ -216,5 +218,6 @@ async def ask_question(request: QuestionRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LLMGenerationError as exc:
-        logger.exception("Answer generation failed")
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        mark_reason("model_error")
+        logger.error("Answer generation failed")
+        raise HTTPException(status_code=503, detail="Answer generation failed") from exc

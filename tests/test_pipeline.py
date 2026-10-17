@@ -56,7 +56,8 @@ def test_pipeline_reports_insufficient_evidence(tmp_path: Path):
 
     result = pipeline.ask("What is unrelated?")
 
-    assert result == {"answer": INSUFFICIENT_EVIDENCE, "sources": [], "verification": None}
+    assert result["diagnostics"]["reason"] == "retrieval_no_evidence"
+    assert {k: result[k] for k in ("answer", "sources", "verification")} == {"answer": INSUFFICIENT_EVIDENCE, "sources": [], "verification": None}
 
 
 def test_pipeline_applies_embedding_prefixes(tmp_path: Path):
@@ -119,7 +120,8 @@ def test_pipeline_answer_contract(case, monkeypatch):
     pipeline = RAGPipeline(generation_function=lambda *args, **kwargs: case["answer"])
     result = pipeline.ask(case.get("question", "Protokol nedir?"))
     if case["refused"]:
-        assert result == {"answer": INSUFFICIENT_EVIDENCE, "sources": [], "verification": None}
+        assert result["diagnostics"]["reason"] == "model_no_evidence"
+        assert {k: result[k] for k in ("answer", "sources", "verification")} == {"answer": INSUFFICIENT_EVIDENCE, "sources": [], "verification": None}
     else:
         assert result["answer"] == case["answer"]  # Preserve whitespace and raw model text.
         assert result["sources"][0]["text"] == evidence[0]["text"]

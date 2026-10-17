@@ -1,5 +1,13 @@
 # EvidenceRAG
 
+### Yanıt teşhisi sözleşmesi
+
+`/ask` ve doğrudan `RAGPipeline.ask` çıktısı eski `answer/sources/verification` alanlarına ek olarak `diagnostics` sürüm 1 taşır. `reason`: `answered`, `retrieval_no_evidence`, `model_no_evidence`, `input_limit`, `busy`, `model_error` veya `request_error`; hatalar HTTP durumlarını korur. `generation_invoked` gerçek generator callable girişinde true olur; loader/token bütçesi reddi false kalır.
+
+`timings_ms` monotonic milisaniyedir: `total`, `queue`, `model_load`, `query_embedding`, `retrieval`, `generation`, `verification`. Çalışmayan aşama null, çalışan sıfır süre 0'dır. Retrieval query embedding'i, embedding de soğuk yüklemeyi kapsayabilir; alt süreler toplam request'e eklenmez. Generation yalnız callable süresidir; load ve token kontrolünü kapsamaz. Total yanıtın ağdan istemciye ulaşmasını ölçmez. Queue reddi/iptali ve çalışan işte istemci iptali `admission_state` ile ayrılır; iptal native işi sonlandırmaz.
+
+Rastgele `request_id`, T06 model/tokenizer/index kimliği, prompt/source SHA ve runtime sürümleri içerik saklamadan teşhis sağlar. Statik kaynak/sürüm bilgisi proses başına cache'lenir; sorgu başına shell çalışmaz. Varsayılan log yalnız request ID, reason, invocation, admission state ve süreleri içerir; soru/cevap/belge/anahtar loglanmaz. Bu alanlar semantik doğruluk veya gerçek model performansı iddiası değildir.
+
 EvidenceRAG, kullanıcının yüklediği dokümanlardan kanıt parçaları getirerek soruları yanıtlayan basit bir Retrieval-Augmented Generation (RAG) uygulamasıdır. Yanıt üretirken yalnızca retrieval sonucundaki parçalar kullanılır ve kullanılan chunk kaynakları yanıtla birlikte döndürülür.
 
 ## Nasıl çalışır?

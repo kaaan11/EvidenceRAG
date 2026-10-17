@@ -374,7 +374,8 @@ def test_ask_round_trips_number_warnings_without_blocking(client, monkeypatch, l
     response = client.post("/ask", json={"question": "2025 yılında ne oldu?"})
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"answer", "sources", "verification"}
+    assert set(body) == {"answer", "sources", "verification", "diagnostics"}
+    assert body["diagnostics"]["reason"] == "answered"
     assert body["answer"] == raw
     assert body["verification"] == {
         "citations": [1], "invalid_citations": [4],

@@ -4,6 +4,8 @@ from collections import OrderedDict, deque
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
+from contextvars import copy_context
+from .diagnostics import phase, mark_admission, mark_reason
 
 
 class BusyError(RuntimeError):
@@ -102,13 +104,27 @@ class HeavyRuntime:
     def run_sync(self, kind, function, *args, **kwargs):
         if getattr(self.local, "owned", False):
             return function(*args, **kwargs)
-        self._acquire(kind)
+        with phase("queue"):
+            try: self._acquire(kind)
+            except BusyError:
+                mark_admission("queue_rejected"); mark_reason("busy")
+                raise
+        mark_admission("running")
         return self._work(function, args, kwargs)
 
     async def run_async(self, kind, function, *args, **kwargs):
-        await self._acquire_async(kind)
+        with phase("queue"):
+            try: await self._acquire_async(kind)
+            except asyncio.CancelledError:
+                mark_admission("queue_cancelled"); mark_reason("cancelled")
+                raise
+            except BusyError:
+                mark_admission("queue_rejected"); mark_reason("busy")
+                raise
+        mark_admission("running")
         try:
-            future = asyncio.get_running_loop().run_in_executor(self.executor, self._work, function, args, kwargs)
+            context = copy_context()
+            future = asyncio.get_running_loop().run_in_executor(self.executor, context.run, self._work, function, args, kwargs)
         except BaseException:
             self._release()
             raise
@@ -121,11 +137,14 @@ class HeavyRuntime:
                 break
             except asyncio.CancelledError:
                 cancelled = True
+                mark_admission("client_cancelled_running"); mark_reason("cancelled")
             except BaseException:
                 if cancelled:
+                    mark_reason("cancelled")
                     raise asyncio.CancelledError() from None
                 raise
         if cancelled:
+            mark_reason("cancelled")
             raise asyncio.CancelledError()
         return result
 
@@ -154,7 +173,11 @@ class SingleFlightCache:
     def get(self, key, factory):
         with self.lock:
             if key not in self.values:
-                value = factory()  # Publish only success; failed initialization can retry.
+                with phase("model_load"):
+                    try: value = factory()  # Publish only success; failed initialization can retry.
+                    except Exception:
+                        mark_reason("model_error")
+                        raise
                 self.values[key] = value
                 if len(self.values) > self.maxsize:
                     self.values.popitem(last=False)
