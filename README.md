@@ -142,6 +142,8 @@ Silinen dokümanın chunk'ları index'ten çıkarılır ve artık kanıt olarak 
 
 ### Kayıt işlemi ve servis lease'i
 
+Servis kalıcı indeksi modül importunda yüklemez; lease alındıktan sonra son committed dosyayı yeniden okur ve ancak başarılı yükleme/preload sonrası istek kabul eder. Böylece önceki servisin import ile startup arasında tamamladığı kayıtlar korunur. Bozuk/uyumsuz dosyada startup başarısız olur ve lease bırakılır; dosya değiştirilmez. Standalone constructor varsayılan otomatik okumasını korur.
+
 Add/delete aynı mutasyon kilidi altında candidate FAISS index'i, chunk listesi ve belge kayıtlarını oluşturur; quota/duplicate kontrolleri aynı kritik bölümdedir. Candidate hedefle aynı dizindeki benzersiz temporary NPZ'ye yazılır, file flush/fsync yapılır; `os.replace` görünürlük commit noktasıdır. Sonrasında tek state pointer'ı RAM'e yayımlanır. Açma/serialization/yazma/file-fsync/replace öncesi hata `not_committed` durumudur; eski RAM, arama, duplicate kontrolü ve reload korunur. Geçici dosya normal başarı/hata yollarında temizlenir; hedef dosya recovery bahanesiyle silinmez.
 
 Replace sonrası directory sync hatası `durability_uncertain` verir: işlem görünür olabilir; temiz rollback veya normal başarı ack'i sayılmaz. API `500` yanıtında string `detail`, `operation_id` ve `commit_status` döndürür. Kör retry yapmadan belge listesini ve `/health.store_operation_id` değerini kontrol edin. Son operation ID NPZ metadata'sında da saklanır. Windows'ta file fsync uygulanır, POSIX directory-fsync uygulanmaz; POSIX yolunda directory fsync kodu vardır fakat bu Windows koşusunda doğrulanmadı. Elektrik kesintisi ve tüm dosya sistemleri için dayanıklılık garantisi yoktur.

@@ -48,6 +48,7 @@ rag_pipeline = RAGPipeline(
         max_chunks=settings.max_store_chunks,
         max_text_bytes=settings.max_store_text_bytes,
         write_guard=_require_writer_lease,
+        autoload=False,  # Service reads the latest commit only after owning the lease.
     ),
 )
 
@@ -59,9 +60,11 @@ async def lifespan(app):
     _service_lease = lease
     if lease is not None: store.write_guard = lease.require_held
     runtime = rag_pipeline.runtime
-    app.state.service_accepting = True
+    app.state.service_accepting = False
     app.state.model_readiness = "lazy"
     try:
+        if lease is not None:
+            store.reload()
         if rag_pipeline.settings.preload_models:
             app.state.model_readiness = "loading"
             try:
@@ -70,6 +73,7 @@ async def lifespan(app):
             except Exception as exc:
                 app.state.model_readiness = "failed"
                 raise RuntimeError("Explicit model preload failed") from exc
+        app.state.service_accepting = True
         yield
     finally:
         app.state.service_accepting = False

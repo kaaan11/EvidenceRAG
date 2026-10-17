@@ -53,7 +53,7 @@ class _State:
 
 
 class VectorStore:
-    def __init__(self, persist_path=None, signature=None, *, max_chunks=20000, max_text_bytes=64 * 1024 * 1024, write_guard=None):
+    def __init__(self, persist_path=None, signature=None, *, max_chunks=20000, max_text_bytes=64 * 1024 * 1024, write_guard=None, autoload=True):
         self._state = _State(None, [], {})
         self.write_guard = write_guard  # Service-scoped lease; standalone stores do not acquire leases.
         self.max_chunks = max_chunks
@@ -67,8 +67,18 @@ class VectorStore:
         # read and write holds this lock.
         self._lock = threading.Lock()
 
-        if self.persist_path and self.persist_path.exists():
+        if autoload and self.persist_path and self.persist_path.exists():
             self._load()
+
+    def reload(self):
+        """Refresh service state under its writer lease; standalone reads stay usable."""
+        with self._lock:
+            if self.write_guard: self.write_guard()
+            if self.persist_path:
+                if self.persist_path.exists():
+                    self._load()
+                else:
+                    self._state = _State(None, [], {})
 
     @property
     def index(self): return self._state.index
