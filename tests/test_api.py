@@ -26,7 +26,7 @@ def client(monkeypatch):
         generation_function=fake_generate,
     )
     monkeypatch.setattr(main, "rag_pipeline", pipeline)
-    return TestClient(main.app)
+    return TestClient(main.app, base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
 
 
 def test_upload_then_ask_returns_answer_with_sources(client):
@@ -105,7 +105,7 @@ def asgi_post(chunks, headers=(), app=None, path="/documents", disconnect=False)
     consumed = []
     scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
              "scheme": "http", "path": path, "raw_path": path.encode(), "root_path": "",
-             "query_string": b"", "headers": list(headers), "server": ("test", 80), "client": ("127.0.0.1", 1)}
+             "query_string": b"", "headers": [(b"host", b"127.0.0.1"), *headers], "server": ("test", 80), "client": ("127.0.0.1", 1)}
     async def receive():
         position = len(consumed)
         if position >= len(chunks):
@@ -401,3 +401,12 @@ def test_ask_marker_contract(client, monkeypatch, raw, refused):
     else:
         assert body["answer"] == raw
         assert body["verification"]["question_only_numbers"] == []
+
+
+def test_deleting_one_document_preserves_the_other(client):
+    first = upload(client, "first.txt", "First event 2024.").json()["document_id"]
+    second = upload(client, "second.txt", "Second event 2025.").json()["document_id"]
+    assert client.delete(f"/documents/{first}").status_code == 200
+    remaining = client.get("/documents").json()["documents"]
+    assert [item["document_id"] for item in remaining] == [second]
+    assert client.get("/health").json()["indexed_chunks"] == 1
