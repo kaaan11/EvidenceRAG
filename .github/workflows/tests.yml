@@ -1,5 +1,5 @@
 name: Windows model-free and native tests
-on:
+'on':
   pull_request:
   workflow_dispatch:
 permissions:
@@ -25,7 +25,8 @@ jobs:
         with:
           node-version: '24.19.0'
       - name: Install verified Windows lock
-        run: python -m pip install --require-hashes --only-binary=:all: -r requirements-dev.lock
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r requirements-dev.lock
       - name: Model-free unit lane
         run: python -m pytest -q -p no:cacheprovider -m "model_free and not real_model"
       - name: Native store and framework lane
